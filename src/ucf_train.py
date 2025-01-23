@@ -143,4 +143,4 @@ if __name__ == '__main__':
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
 
-    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)asdfsadf
+    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
