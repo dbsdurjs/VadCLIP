@@ -50,7 +50,7 @@ def getLocMAP(predictions, th, gtsegments, gtlabels, excludeNormal):
    predictions_mod = []
    c_score = []
    for p in predictions:
-      pp = - p; [pp[:,i].sort() for i in range(np.shape(pp)[1])]; pp=-pp
+      pp = - p; [pp[:,i].sort() for i in range(np.shape( )[1])]; pp=-pp
       c_s = np.mean(pp[:int(np.shape(pp)[0]/16), :], axis=0)
       ind = c_s > 0.0
       c_score.append(c_s)

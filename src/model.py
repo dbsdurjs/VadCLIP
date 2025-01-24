@@ -158,7 +158,7 @@ class CLIPVAD(nn.Module):
 
         return output
 
-    def encode_video(self, images, padding_mask, lengths):
+    def encode_video(self, images, padding_mask, lengths):  # LGT Adapter
         images = images.to(torch.float)
         position_ids = torch.arange(self.visual_length, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)
@@ -166,9 +166,10 @@ class CLIPVAD(nn.Module):
         frame_position_embeddings = frame_position_embeddings.permute(1, 0, 2)
         images = images.permute(1, 0, 2) + frame_position_embeddings
 
-        x, _ = self.temporal((images, None))
+        x, _ = self.temporal((images, None))    # local module(clip img features)
         x = x.permute(1, 0, 2)
 
+        # global module()
         adj = self.adj4(x, lengths) # H_sim
         disadj = self.disAdj(x.shape[0], x.shape[1])    # H_dis
         x1_h = self.gelu(self.gc1(x, adj))
@@ -183,7 +184,7 @@ class CLIPVAD(nn.Module):
         return x
 
     def encode_textprompt(self, text):
-        word_tokens = clip.tokenize(text).to(self.device)
+        word_tokens = clip.tokenize(text).to(self.device)   # tokenizer(label)
         word_embedding = self.clipmodel.encode_token(word_tokens)
         text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])
         text_tokens = torch.zeros(len(text), 77).to(self.device)
@@ -200,10 +201,10 @@ class CLIPVAD(nn.Module):
         return text_features
 
     def forward(self, visual, padding_mask, text, lengths):
-        visual_features = self.encode_video(visual, padding_mask, lengths)  # torch.Size([128, 256, 512])
+        visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([128, 256, 512])
         logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))
 
-        text_features_ori = self.encode_textprompt(text)
+        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text)
 
         text_features = text_features_ori
         logits_attn = logits1.permute(0, 2, 1)
@@ -212,8 +213,8 @@ class CLIPVAD(nn.Module):
         visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])
         text_features = text_features_ori.unsqueeze(0)
         text_features = text_features.expand(visual_attn.shape[0], text_features.shape[1], text_features.shape[2])
-        text_features = text_features + visual_attn
-        text_features = text_features + self.mlp1(text_features)
+        text_features = text_features + visual_attn # visual prompt(vision + Text)
+        text_features = text_features + self.mlp1(text_features)    # visual prompt(ffn(text features) + text features)
 
         visual_features_norm = visual_features / visual_features.norm(dim=-1, keepdim=True)
         text_features_norm = text_features / text_features.norm(dim=-1, keepdim=True)
