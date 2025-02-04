@@ -11,6 +11,10 @@ from ucf_test import test
 from utils.dataset import UCFDataset
 from utils.tools import get_prompt_text, get_batch_label
 import ucf_option
+from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
+
+writer = SummaryWriter()
 
 def CLASM(logits, labels, lengths, device):
     instance_logits = torch.zeros(0).to(device)
@@ -46,7 +50,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
-    prompt_text = get_prompt_text(label_map)
+    prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
     ap_best = 0
     epoch = 0
 
@@ -58,61 +62,92 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         ap_best = checkpoint['ap']
         print("checkpoint info:")
         print("epoch:", epoch+1, " ap:", ap_best)
-
+    
     for e in range(args.max_epoch):
         model.train()
         loss_total1 = 0
         loss_total2 = 0
+        loss_total3 = 0
         normal_iter = iter(normal_loader)
         anomaly_iter = iter(anomaly_loader)
-        for i in range(min(len(normal_loader), len(anomaly_loader))):
-            step = 0
-            normal_features, normal_label, normal_lengths = next(normal_iter)   # normal features : torch.Size([64, 256, 512])
-            anomaly_features, anomaly_label, anomaly_lengths = next(anomaly_iter)   # anomaly features : torch.Size([64, 256, 512])
-
-            visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device)
-            text_labels = list(normal_label) + list(anomaly_label)
-            feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
-            text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
-
-            text_features, logits1, logits2 = model(visual_features, None, prompt_text, feat_lengths) 
-            #loss1
-            loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
-            loss_total1 += loss1.item()
-            #loss2
-            loss2 = CLASM(logits2, text_labels, feat_lengths, device)
-            loss_total2 += loss2.item()
-            #loss3
-            loss3 = torch.zeros(1).to(device)
-            text_feature_normal = text_features[0] / text_features[0].norm(dim=-1, keepdim=True)
-            for j in range(1, text_features.shape[0]):
-                text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
-                loss3 += torch.abs(text_feature_normal @ text_feature_abr)
-            loss3 = loss3 / 13 * 1e-1
-
-            loss = loss1 + loss2 + loss3
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            step += i * normal_loader.batch_size * 2
-            if step % 1280 == 0 and step != 0:
-                print('epoch: ', e+1, '| step: ', step, '| loss1: ', loss_total1 / (i+1), '| loss2: ', loss_total2 / (i+1), '| loss3: ', loss3.item())
-                AUC, AP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device)
-                AP = AUC
-
-                if AP > ap_best:
-                    ap_best = AP 
-                    checkpoint = {
-                        'epoch': e,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'ap': ap_best}
-                    torch.save(checkpoint, args.checkpoint_path)
-                
-        scheduler.step()
         
-        torch.save(model.state_dict(), 'model/model_cur.pth')
+        with tqdm(total=min(len(normal_loader), len(anomaly_loader)), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
+
+            for i in range(min(len(normal_loader), len(anomaly_loader))):
+                step = 0
+                normal_features, normal_label, normal_lengths = next(normal_iter)   # normal features : torch.Size([64, 256, 512])
+                anomaly_features, anomaly_label, anomaly_lengths = next(anomaly_iter)   # anomaly features : torch.Size([64, 256, 512])
+
+                visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device)
+                text_labels = list(normal_label) + list(anomaly_label)
+                feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
+                text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
+
+                text_features, logits1, logits2 = model(visual_features, None, prompt_text, feat_lengths)
+                
+                #loss1
+                loss1 = CLAS2(logits1, text_labels, feat_lengths, device)
+                loss_total1 += loss1.item()
+                
+                #loss2
+                loss2 = CLASM(logits2, text_labels, feat_lengths, device)
+
+                loss_total2 += loss2.item()
+                #loss3
+                loss3 = torch.zeros(1).to(device)
+                text_feature_normal = text_features[0] / text_features[0].norm(dim=-1, keepdim=True)
+                for j in range(1, text_features.shape[0]):
+                    text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
+                    loss3 += torch.abs(text_feature_normal @ text_feature_abr)
+                loss3 = loss3 / 13 * 1e-1
+
+                loss = loss1 + loss2 + loss3
+                loss_total3 += loss3.item()
+                
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                
+                step += i * normal_loader.batch_size * 2
+                
+                # tqdm 업데이트 및 정보 추가
+                pbar.set_postfix(
+                    loss1=f"{(loss_total1 / (i+1)):.4f}",
+                    loss2=f"{(loss_total2 / (i+1)):.4f}",
+                    loss3=f"{loss3.item():.4f}",
+                )
+                pbar.update(1)
+            # 에포크 손실값 평균 계산 후 TensorBoard에 기록
+            epoch_loss1 = loss_total1 / (i+1)
+            epoch_loss2 = loss_total2 / (i+1)
+            epoch_loss3 = loss_total3 / (i+1)
+            writer.add_scalar('loss1/train', epoch_loss1, e)
+            writer.add_scalar('loss2/train', epoch_loss2, e)
+            writer.add_scalar('loss3/train', epoch_loss3, e)
+            
+            print(f'epoch: {e+1}, loss1: {(loss_total1 / (i+1)):.4f},| loss2: {(loss_total2 / (i+1)):.4f}, loss3: {loss3.item():.4f}')
+            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device)
+            
+            test_acc1 = {'AUC1':AUC, 'AP1':AP}
+            test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
+            
+            writer.add_scalars('test_acc1/test_accuracy', test_acc1, e)
+            writer.add_scalars('test_acc2/test_accuracy', test_acc2, e)
+            writer.add_scalar('average mAP/test_accuracy', average_mAP, e)
+            AP = AUC
+
+            if AP > ap_best:
+                ap_best = AP 
+                checkpoint = {
+                    'epoch': e,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'ap': ap_best}
+                torch.save(checkpoint, args.checkpoint_path)
+                
+            scheduler.step()
+        
+        torch.save(model.state_dict(), '../vadclip_pth/model/model_cur.pth')
         checkpoint = torch.load(args.checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
 
@@ -144,3 +179,4 @@ if __name__ == '__main__':
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
 
     train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
+    writer.close()
