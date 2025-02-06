@@ -45,8 +45,10 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
             _, logits1, logits2 = model(visual, padding_mask, prompt_text, lengths)
+
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2])
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2])
+
             prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1))
             prob1 = torch.sigmoid(logits1[0:len_cur].squeeze(-1))
 
@@ -67,10 +69,11 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     ap1 = ap1.tolist()
     ap2 = ap2.tolist()
 
-    ROC1 = roc_auc_score(gt, np.repeat(ap1, 16))
-    AP1 = average_precision_score(gt, np.repeat(ap1, 16))
-    ROC2 = roc_auc_score(gt, np.repeat(ap2, 16))
-    AP2 = average_precision_score(gt, np.repeat(ap2, 16))
+    ROC1 = roc_auc_score(gt, np.repeat(ap1, 16))    # sigmoid 방식(binary classification)
+    AP1 = average_precision_score(gt, np.repeat(ap1, 16))   # sigmoid 방식(binary classification)
+
+    ROC2 = roc_auc_score(gt, np.repeat(ap2, 16))    # softmax 방식(multi-class classification)
+    AP2 = average_precision_score(gt, np.repeat(ap2, 16))   # softmax 방식(multi-class classification)
 
     print(f"AUC1: {ROC1:.4f}, AP1: {AP1:.4f}")
     print(f"AUC2: {ROC2:.4f}, AP2: {AP2:.4f}")
