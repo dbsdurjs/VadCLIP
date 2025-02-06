@@ -11,7 +11,6 @@ target_folders = [os.path.splitext(f)[0] for f in [
 ]]
 
 # 📁 최상위 폴더 (Extracted_Frames/)
-base_folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"   # desktop
 base_folder = "/media/vcl/DATA/YG/Extracted_Frames/"    # server
 
 def rename_images_in_selected_folders(base_folder, target_folders):
