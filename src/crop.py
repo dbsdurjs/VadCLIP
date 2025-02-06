@@ -18,7 +18,7 @@ def extract_video_frames(video_path, output_dir):
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # ✅ BGR → RGB 변환
         frame_pil = Image.fromarray(frame_rgb)
 
-        frame_path = os.path.join(output_dir, f"frame_{frame_count:05d}.jpg")
+        frame_path = os.path.join(output_dir, f"{video_basename}_frame_{frame_count:05d}.jpg")
         frame_pil.save(frame_path)
 
         frame_count += 1
