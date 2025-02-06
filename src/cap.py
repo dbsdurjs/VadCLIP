@@ -1,47 +1,63 @@
 import os, torch
 from PIL import Image
-from transformers import AutoProcessor, AutoModelForImageTextToText, BlipProcessor, BlipForConditionalGeneration
+from transformers import AutoProcessor, AutoModelForImageTextToText
 
 if __name__ == '__main__':
-    folder = "./Abuse001_x264"
-    image_files = []
-    i = 0
-    while True:
-        image_path = os.path.join(folder, f"frame_{i:05d}.jpg")
-        if os.path.exists(image_path):
-            image_files.append(image_path)
-            i += 1
-        else:
-            break
-
-    if not image_files:
-        print("이미지가 없습니다.")
-        exit()
-
-    processor = AutoProcessor.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-    model = AutoModelForImageTextToText.from_pretrained("nlpconnect/vit-gpt2-image-captioning")
-
+    # folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/Arrest/Arrest001_x264"
+    # base_folder = "./VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"
+    base_folder= "/home/vcl/Documents/YG/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames"
+    
+    processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-6.7b")
+    model = AutoModelForImageTextToText.from_pretrained("Salesforce/blip2-opt-6.7b", torch_dtype=torch.float16)
+    
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
-    # 각 이미지마다 캡션을 생성
-    # 결과 캡션을 저장할 파일을 미리 열어둡니다.
-    output_file = "individual_captions.txt"
-    image_files = image_files[295:]
-    with open(output_file, "w", encoding="utf-8") as f:
-    # 각 이미지마다 캡션 생성 및 저장
-        for image_file in image_files:
-            image = Image.open(image_file)
-            pixel_values = processor(images=image, return_tensors="pt").pixel_values.to(device)
+    for class_name in os.listdir(base_folder):
+        class_path = os.path.join(base_folder, class_name)
+        
+        if not os.path.isdir(class_path):  # 디렉토리가 아니면 건너뛰기
+            continue
 
-            generated_ids = model.generate(pixel_values=pixel_values, max_length=50)
-            caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-
-            # 생성된 캡션 출력
-            print(f"{image_file}: {caption}")
+        # 4️⃣ 각 동영상 폴더 순회
+        for video_folder in os.listdir(class_path):
+            video_folder_path = os.path.join(class_path, video_folder)
             
-            # 캡션을 파일에 저장 (각 캡션 생성 시마다 기록)
-            f.write(f"{image_file}: {caption}\n")
-            f.flush()  # 즉시 디스크에 기록되도록 flush 호출
+            if not os.path.isdir(video_folder_path):  # 디렉토리가 아니면 건너뛰기
+                continue
 
-    print(f"생성된 캡션이 '{output_file}' 파일에 저장되었습니다.")
+            print(f"Processing video frames in: {video_folder_path}")
+
+            # 5️⃣ 동영상 폴더 내 이미지 파일 리스트 정렬
+            image_files = sorted([
+                os.path.join(video_folder_path, f) for f in os.listdir(video_folder_path)
+                if f.lower().endswith('.jpg')
+            ])
+
+            if not image_files:
+                print(f"❌ No image frames found in {video_folder_path}")
+                continue
+
+            # 6️⃣ 텍스트 파일 설정 (동영상 폴더명 기반으로 저장)
+            output_file = os.path.join(video_folder_path, f"{video_folder}.txt")
+
+            with open(output_file, "w", encoding="utf-8") as f:
+                # 7️⃣ 각 프레임에 대해 캡션 생성 및 저장
+                for image_file in image_files:
+                    try:
+                        image = Image.open(image_file).convert("RGB")  # ✅ RGB 변환 (안전성 확보)
+                        pixel_values = processor(images=image, return_tensors="pt").pixel_values.to(device, torch.float16)
+
+                        # ✅ 모델에 입력하여 캡션 생성
+                        generated_ids = model.generate(pixel_values=pixel_values, max_length=50)
+                        caption = processor.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0]
+
+                        # ✅ 캡션을 파일에 저장 (이미지 파일명 없이 내용만 기록)
+                        f.write(f"{caption}")
+                        f.flush()  # 즉시 디스크에 기록
+
+                    except Exception as e:
+                        print(f"⚠️ Error processing {image_file}: {e}")
+                        continue
+
+            print(f"✅ Captions saved in: {output_file}")
