@@ -4,8 +4,8 @@ from transformers import AutoProcessor, AutoModelForImageTextToText
 
 if __name__ == '__main__':
     # folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/Arrest/Arrest001_x264"
-    # base_folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"   # desktop 경로
-    base_folder= "/media/vcl/DATA/YG/Extracted_Frames"  # 서버 경로
+    base_folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"   # desktop 경로
+    # base_folder= "/media/vcl/DATA/YG/Extracted_Frames"  # 서버 경로
     
     processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-6.7b")
     model = AutoModelForImageTextToText.from_pretrained("Salesforce/blip2-opt-6.7b", torch_dtype=torch.float16)
