@@ -72,7 +72,7 @@ class FrameDataset(Dataset):
 # 📌 2. 데이터셋 및 데이터 로더 생성
 base_folder = "/media/vcl/DATA/YG/Extracted_Frames/"
 dataset = FrameDataset(base_folder, processor)
-dataloader = DataLoader(dataset, batch_size=256, shuffle=False, num_workers=NUM_WORKERS, pin_memory=False)
+dataloader = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=NUM_WORKERS, pin_memory=False)
 
 # 📌 4. 배치 단위로 캡션 생성 (비디오명 포함)
 def generate_captions(dataloader, model, processor, device):
