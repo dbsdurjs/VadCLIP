@@ -99,9 +99,9 @@ def generate_captions(dataloader, model, processor, device):
                 output_file = os.path.join(video_folder_path, f"{os.path.basename(video_folder_path)}.txt")
 
                 with open(output_file, "a", encoding="utf-8") as f:
-                    f.write(f"{frame_number}: {caption}\n")
+                    f.write(f"{frame_number}: {caption}")
 
-                print(f'🖼️ Frame: {frame_number} | 📜 Caption: {caption}')
+                # print(f'🖼️ Frame: {frame_number} | 📜 Caption: {caption}')
 
             progress_bar.set_postfix({"Current Video": current_video, "Processed Frames": len(pixel_values)})
 
