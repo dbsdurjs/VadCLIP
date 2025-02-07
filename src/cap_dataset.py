@@ -1,3 +1,4 @@
+# 16개 클래스 중 이전 8개 클래스 작업
 import os
 import torch
 import multiprocessing
@@ -129,6 +130,8 @@ def delete_existing_files(base_folder):
                 os.remove(output_file)
                 print(f"🗑️ Deleted existing file: {output_file}")
 
-# 📌 5. 캡션 생성 실행
-delete_existing_files(base_folder)
-generate_captions(dataloader, model, processor, device)
+if __name__ == '__main__':
+
+    # 📌 5. 캡션 생성 실행
+    delete_existing_files(base_folder)
+    generate_captions(dataloader, model, processor, device)
