@@ -24,10 +24,11 @@ class FrameDataset(Dataset):
         self.video_names = []
         self.processor = processor  # processor를 멤버 변수로 저장
 
+        classes_names = os.listdir(base_folder)
+        classes_names = classes_names[8:]   # 8개 작업, 서버에서 바꾸기
+        print(f'작업 폴더 이름 : {classes_names}')
+
         for class_name in os.listdir(base_folder):
-            classes_names = os.listdir(base_folder)
-            classes_names = classes_names[8:]   # 8개 작업, 서버에서 바꾸기
-            print(f'작업 폴더 이름 : {classes_names}')
 
             if class_name not in classes_names:
                 continue
@@ -109,6 +110,10 @@ def generate_captions(dataloader, model, processor, device):
 
 # 📌 4. 기존 파일 삭제 (이전 결과 지우기)
 def delete_existing_files(base_folder):
+    
+    classes_names = os.listdir(base_folder)[8:]
+    print(f"삭제할 작업 폴더: {classes_names}")
+    
     for class_name in os.listdir(base_folder):
         class_path = os.path.join(base_folder, class_name)
         if not os.path.isdir(class_path):
