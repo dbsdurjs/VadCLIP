@@ -1,4 +1,5 @@
 # 16개 클래스 중 이전 8개 클래스 작업
+# Training_Normal_Videos_Anomaly 제외한 7개 클래스 captioning
 import os
 import torch
 import multiprocessing
