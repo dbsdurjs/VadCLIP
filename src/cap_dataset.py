@@ -8,7 +8,7 @@ from transformers import AutoProcessor, AutoModelForImageTextToText
 from tqdm import tqdm
 
 # ✅ CPU 코어 개수 확인 후 적절한 num_workers 설정
-NUM_WORKERS = multiprocessing.cpu_count()  # CPU 코어 절반 사용
+NUM_WORKERS = 8  # CPU 코어 절반 사용
 print(f"🔹 Using num_workers={NUM_WORKERS}")
 
 # 📌 1. 개별 프레임을 로딩하는 데이터셋 (각 클래스의 앞 절반만 선택)
@@ -60,8 +60,8 @@ class FrameDataset(Dataset):
         video_name = self.video_names[index]
 
         # ✅ `PIL` 대신 `transforms.Lambda()` 사용하여 멀티스레딩 활용
-        image = Image.open(image_path).convert("RGB")
-        # image = self.transform(image)
+        image = Image.open(image_path)
+        image = self.transform(image)
         
         return video_folder_path, image_path, image, video_name
 
