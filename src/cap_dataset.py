@@ -61,7 +61,7 @@ class FrameDataset(Dataset):
 
         # ✅ `PIL` 대신 `transforms.Lambda()` 사용하여 멀티스레딩 활용
         image = Image.open(image_path)
-        image = self.transform(image)
+        # image = self.transform(image)
         
         return video_folder_path, image_path, image, video_name
 
