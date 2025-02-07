@@ -1,3 +1,5 @@
+# data loader를 사용 안 하는 코드, cap_dataset, cap_2_dataset이 메인
+# 참고용
 import os, torch
 from PIL import Image
 from transformers import AutoProcessor, AutoModelForImageTextToText
