@@ -114,19 +114,17 @@ def delete_existing_files(base_folder):
     classes_names = os.listdir(base_folder)[8:]
     print(f"삭제할 작업 폴더: {classes_names}")
     
-    for class_name in os.listdir(base_folder):
+    for class_name in classes_names:
         class_path = os.path.join(base_folder, class_name)
         if not os.path.isdir(class_path):
             continue
-
+        
         for video_folder in os.listdir(class_path):
             video_folder_path = os.path.join(class_path, video_folder)
             if not os.path.isdir(video_folder_path):
                 continue
-
+            
             output_file = os.path.join(video_folder_path, f"{video_folder}.txt")
-
-            # 기존 파일 삭제
             if os.path.exists(output_file):
                 os.remove(output_file)
                 print(f"🗑️ Deleted existing file: {output_file}")
