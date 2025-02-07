@@ -4,24 +4,27 @@ from transformers import AutoProcessor, AutoModelForImageTextToText
 
 if __name__ == '__main__':
     # folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/Arrest/Arrest001_x264"
-    # base_folder = "./VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"
-    base_folder= "/media/vcl/DATA/YG/Extracted_Frames/"
+    base_folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"
+    # base_folder= "/media/vcl/DATA/YG/Extracted_Frames/"
     
-    processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-6.7b")
-    model = AutoModelForImageTextToText.from_pretrained("Salesforce/blip2-opt-6.7b", torch_dtype=torch.float16)
+    # processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-6.7b")
+    # model = AutoModelForImageTextToText.from_pretrained("Salesforce/blip2-opt-6.7b", torch_dtype=torch.float16)
+
+    processor = AutoProcessor.from_pretrained("microsoft/git-large-coco")
+    model = AutoModelForImageTextToText.from_pretrained("microsoft/git-large-coco", torch_dtype=torch.float16)
     
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model.to(device)
 
     for class_name in os.listdir(base_folder):
         classes_names = os.listdir(base_folder)
-        classes_names = classes_names[:8]   # 8개 작업, 서버에서 바꾸기
+        classes_names = classes_names[8:]   # 8개 작업, 서버에서 바꾸기
         print(f'작업 폴더 이름 : {classes_names}')
+
         if class_name not in classes_names:
             continue
 
         class_path = os.path.join(base_folder, class_name)
-        
         if not os.path.isdir(class_path):  # 디렉토리가 아니면 건너뛰기
             continue
 
