@@ -8,7 +8,7 @@ from transformers import AutoProcessor, AutoModelForImageTextToText
 from tqdm import tqdm
 
 # ✅ CPU 코어 개수 확인 후 적절한 num_workers 설정
-NUM_WORKERS = min(4, multiprocessing.cpu_count() // 2)  # CPU 코어 절반 사용
+NUM_WORKERS = multiprocessing.cpu_count()  # CPU 코어 절반 사용
 print(f"🔹 Using num_workers={NUM_WORKERS}")
 
 # 📌 1. 개별 프레임을 로딩하는 데이터셋 (각 클래스의 앞 절반만 선택)
@@ -24,7 +24,7 @@ class FrameDataset(Dataset):
 
         for class_name in os.listdir(base_folder):
             classes_names = os.listdir(base_folder)
-            classes_names = classes_names[8:]   # 8개 작업, 서버에서 바꾸기
+            classes_names = classes_names[:8]   # 8개 작업, 서버에서 바꾸기
             print(f'작업 폴더 이름 : {classes_names}')
 
             if class_name not in classes_names:
@@ -35,8 +35,8 @@ class FrameDataset(Dataset):
                 continue
 
             # 🔹 클래스 폴더 내부의 모든 동영상 폴더 가져오기
-            video_folders = sorted(os.listdir(class_path))[:10]
-
+            # video_folders = sorted(os.listdir(class_path))[:10]
+            video_folders = sorted(os.listdir(class_path))
             for video_folder in video_folders:
                 video_folder_path = os.path.join(class_path, video_folder)
                 if not os.path.isdir(video_folder_path):
@@ -66,13 +66,19 @@ class FrameDataset(Dataset):
         return video_folder_path, image_path, image, video_name
 
 # 📌 2. 데이터셋 및 데이터 로더 생성
-base_folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"
+# base_folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"
+base_folder= "/media/vcl/DATA/YG/Extracted_Frames/"
+
 dataset = FrameDataset(base_folder)
 dataloader = DataLoader(dataset, batch_size=256, shuffle=False, num_workers=NUM_WORKERS, pin_memory=False)
 
 # 📌 3. 모델 로드
-processor = AutoProcessor.from_pretrained("microsoft/git-large-coco")
-model = AutoModelForImageTextToText.from_pretrained("microsoft/git-large-coco", torch_dtype=torch.float16)
+# processor = AutoProcessor.from_pretrained("microsoft/git-large-coco")
+# model = AutoModelForImageTextToText.from_pretrained("microsoft/git-large-coco", torch_dtype=torch.float16)
+
+processor = AutoProcessor.from_pretrained("Salesforce/blip2-opt-6.7b")
+model = AutoModelForImageTextToText.from_pretrained("Salesforce/blip2-opt-6.7b", torch_dtype=torch.float16)
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
 model.to(device)
 

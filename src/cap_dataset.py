@@ -24,7 +24,7 @@ class FrameDataset(Dataset):
 
         for class_name in os.listdir(base_folder):
             classes_names = os.listdir(base_folder)
-            classes_names = classes_names[:8]   # 8개 작업, 서버에서 바꾸기
+            classes_names = classes_names[8:]   # 8개 작업, 서버에서 바꾸기
             print(f'작업 폴더 이름 : {classes_names}')
 
             if class_name not in classes_names:
