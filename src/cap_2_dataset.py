@@ -17,7 +17,7 @@ class FrameDataset(Dataset):
         self.data = []
         self.video_names = []
         self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
+            # transforms.Resize((224, 224)),
             transforms.Lambda(lambda img: img.convert("RGB")),  # ✅ 멀티스레딩 최적화
             transforms.ToTensor(),
         ])
