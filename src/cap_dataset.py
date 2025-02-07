@@ -26,7 +26,7 @@ class FrameDataset(Dataset):
         self.processor = processor  # processor를 멤버 변수로 저장
 
         classes_names = os.listdir(base_folder)
-        classes_names = classes_names[8:]   # 8개 작업, 서버에서 바꾸기
+        classes_names = classes_names[8:][:4]   # 8개 중 이전 4개만
         print(f'작업 폴더 이름 : {classes_names}')
 
         for class_name in os.listdir(base_folder):
@@ -112,7 +112,7 @@ def generate_captions(dataloader, model, processor, device):
 # 📌 4. 기존 파일 삭제 (이전 결과 지우기)
 def delete_existing_files(base_folder):
     
-    classes_names = os.listdir(base_folder)[8:]
+    classes_names = os.listdir(base_folder)[8:][:4] # 8개 중 이전 4개만
     print(f"삭제할 작업 폴더: {classes_names}")
     
     for class_name in classes_names:
