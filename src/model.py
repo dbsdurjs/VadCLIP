@@ -114,6 +114,7 @@ class CLIPVAD(nn.Module):
 
         self.frame_position_embeddings = nn.Embedding(visual_length, visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
+        self.word_proj = nn.Linear(512, self.embed_dim) # add for concat (512 -> 1024)
 
         self.initialize_parameters()
 
@@ -184,8 +185,9 @@ class CLIPVAD(nn.Module):
         return x
 
     def encode_textprompt(self, text):
-        word_tokens = clip.tokenize(text).to(self.device)   # tokenizer(label)
-        word_embedding = self.clipmodel.encode_token(word_tokens)
+        word_tokens = clip.tokenize(text).to(self.device)   # tokenizer(label), shape(14, 77)
+        word_embedding = self.clipmodel.encode_token(word_tokens)   # shape(14, 77, 512)
+        # word_embedding = self.word_proj(word_embedding) # add for concat, shape(14, 77, 1024)
         text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])
         text_tokens = torch.zeros(len(text), 77).to(self.device)
 
@@ -196,6 +198,8 @@ class CLIPVAD(nn.Module):
             text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix] = word_embedding[i, ind]
             text_tokens[i, self.prompt_prefix + ind + self.prompt_postfix] = word_tokens[i, ind]
 
+        # text_embedding shape(14, 77, 1024)
+        # text_tokens shape(14, 77)
         text_features = self.clipmodel.encode_text(text_embeddings, text_tokens)
 
         return text_features

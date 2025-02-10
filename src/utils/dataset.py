@@ -57,7 +57,6 @@ class UCFDataset(data.Dataset):
 
             clip_feature = np.concatenate([clip_feature, clip_cap_feature], axis=1)
 
-
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
         else:
