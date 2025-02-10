@@ -3,6 +3,7 @@ import torch, os
 import torch.utils.data as data
 import pandas as pd
 import utils.tools as tools
+from multi_head_attention import *
 
 class UCFDataset(data.Dataset):
     def __init__(self, clip_dim: int, file_path: str, file_path_cap: str, test_mode: bool, label_map: dict, normal: bool = False, using_caption: bool = False):
@@ -10,7 +11,6 @@ class UCFDataset(data.Dataset):
         self.df_cap = pd.read_csv(file_path_cap)
         self.clip_dim = clip_dim    # 256
         self.test_mode = test_mode
-        
         # lable_map = {'Normal': 'normal', 'Abuse': 'abuse', 'Arrest': 'arrest', 'Arson': 'arson', 'Assault': 'assault', 'Burglary': 'burglary', 'Explosion': 'explosion', 'Fighting': 'fighting', 'RoadAccidents': 'roadAccidents', 'Robbery': 'robbery', 'Shooting': 'shooting', 'Shoplifting': 'shoplifting', 'Stealing': 'stealing', 'Vandalism': 'vandalism'}
         self.label_map = label_map  
         self.normal = normal
@@ -62,7 +62,7 @@ class UCFDataset(data.Dataset):
         else:
             clip_feature, clip_length = tools.process_split(clip_feature, self.clip_dim)
 
-        clip_feature = torch.tensor(clip_feature)
+        clip_feature = torch.tensor(clip_feature).float()
         clip_label = self.df.loc[index]['label']
         return clip_feature, clip_label, clip_length
 

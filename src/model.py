@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch import nn
 from clip import clip
 from utils.layers import GraphConvolution, DistanceAdj
+from multi_head_attention import *
 
 class LayerNorm(nn.LayerNorm):
 
@@ -70,6 +71,7 @@ class CLIPVAD(nn.Module):
                  prompt_postfix: int,
                  device):
         super().__init__()
+        self.cross_attn = CrossAttention(512, 4)
 
         self.num_class = num_class
         self.visual_length = visual_length  # 256
@@ -114,8 +116,12 @@ class CLIPVAD(nn.Module):
 
         self.frame_position_embeddings = nn.Embedding(visual_length, visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
-        self.word_proj = nn.Linear(512, self.embed_dim) # add for concat (512 -> 1024)
-
+        # self.proj = nn.Linear(1024, 512) # add for concat (512 -> 1024)
+        self.proj2 = nn.Sequential(
+            nn.Linear(1024, 768),
+            nn.LeakyReLU(),
+            nn.Linear(768, 512)
+        )
         self.initialize_parameters()
 
     def initialize_parameters(self):
@@ -160,11 +166,13 @@ class CLIPVAD(nn.Module):
         return output
 
     def encode_video(self, images, padding_mask, lengths):  # LGT Adapter
+        # images = self.proj2(images)
+        images = self.cross_attn(images[:,:,:512], images[:,:,512:])
         images = images.to(torch.float)
         position_ids = torch.arange(self.visual_length, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)
         frame_position_embeddings = self.frame_position_embeddings(position_ids)
-        frame_position_embeddings = frame_position_embeddings.permute(1, 0, 2)
+        frame_position_embeddings = frame_position_embeddings.permute(1, 0, 2)  # torch.Size([256, 128, 1024])
         images = images.permute(1, 0, 2) + frame_position_embeddings
 
         x, _ = self.temporal((images, None))    # local module(clip img features)
@@ -187,7 +195,6 @@ class CLIPVAD(nn.Module):
     def encode_textprompt(self, text):
         word_tokens = clip.tokenize(text).to(self.device)   # tokenizer(label), shape(14, 77)
         word_embedding = self.clipmodel.encode_token(word_tokens)   # shape(14, 77, 512)
-        # word_embedding = self.word_proj(word_embedding) # add for concat, shape(14, 77, 1024)
         text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])
         text_tokens = torch.zeros(len(text), 77).to(self.device)
 
