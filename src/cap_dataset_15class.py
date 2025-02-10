@@ -1,4 +1,4 @@
-# 16개 클래스 중 이전 8개 클래스 작업
+# 16개 클래스 중 15개 클래스 작업
 # Training_Normal_Videos_Anomaly 제외한 7개 클래스 captioning
 import os
 import torch
@@ -27,7 +27,6 @@ class FrameDataset(Dataset):
         self.processor = processor  # processor를 멤버 변수로 저장
 
         classes_names = os.listdir(base_folder)
-        classes_names = classes_names[8:]   # Training_Normal_Videos_Anomaly 제외 나머지
         classes_names.remove('Training_Normal_Videos_Anomaly')
         print(f'작업 폴더 이름 : {classes_names}')
 
@@ -114,7 +113,7 @@ def generate_captions(dataloader, model, processor, device):
 # 📌 4. 기존 파일 삭제 (이전 결과 지우기)
 def delete_existing_files(base_folder):
     
-    classes_names = os.listdir(base_folder)[8:] # Training_Normal_Videos_Anomaly 제외 나머지
+    classes_names = os.listdir(base_folder) # Training_Normal_Videos_Anomaly 제외 나머지
     classes_names.remove('Training_Normal_Videos_Anomaly')
 
     print(f"삭제할 작업 폴더: {classes_names}")
