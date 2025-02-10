@@ -14,48 +14,49 @@ def average_features(features, group_size=16):
 
 if __name__ == '__main__':
     # -------------------------------------------------------------------------------
-    # file1 = './save_path.npy'
-    file2 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCFClipFeatures/Fighting/Fighting020_x264__0.npy'
-    data2 = np.load(file2)
-    print(data2.shape)
+    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature/Shoplifting/Shoplifting012_x264/Shoplifting012_x264.npy'
+    file2 = '/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/gt_segment_ucf.npy'
     
-    # data1 = np.load(file1)
-    # data2 = np.load(file2)
+    data1 = np.load(file1, allow_pickle=True)
+    data2 = np.load(file2, allow_pickle=True)
+
+    print(data1.shape)
+    # print(data2.shape)
 
     # final_feature = average_features(data1, group_size=16)
     # print(f"Final feature shape: {final_feature.shape}")  # Shape: [video_frames/16, 512]
 
     # # 1. 데이터 차원 비교
-    # if final_feature.shape != data2.shape:
-    #     print(f"Shape mismatch: {final_feature.shape} vs {data2.shape}")
+    # if data1.shape != data2.shape:
+    #     print(f"Shape mismatch: {data1.shape} vs {data2.shape}")
     # else:
-    #     print(f"Shapes are identical: {final_feature.shape}")
+    #     print(f"Shapes are identical: {data1.shape}")
 
     # # 2. 데이터 유형 비교
-    # if final_feature.dtype != data2.dtype:
-    #     print(f"Data type mismatch: {final_feature.dtype} vs {data2.dtype}")
+    # if data1.dtype != data2.dtype:
+    #     print(f"Data type mismatch: {data1.dtype} vs {data2.dtype}")
     # else:
-    #     print(f"Data types are identical: {final_feature.dtype}")
+    #     print(f"Data types are identical: {data1.dtype}")
 
     # # 3. 값 비교 (element-wise)
-    # if np.array_equal(final_feature, data2):
+    # if np.array_equal(data1, data2):
     #     print("The two arrays are identical.")
     # else:
     #     print("The two arrays are not identical.")
     
     # # 4. 차이 확인 (element-wise 차이 계산)
-    # diff = final_feature - data2  # 값 차이
+    # diff = data1 - data2  # 값 차이
     # max_diff = np.max(np.abs(diff))  # 절대값 기준 최대 차이
     # print(f"Maximum difference: {max_diff}")
     
     # # 5. 값이 다른 요소 인덱스 찾기
-    # mismatched_indices = np.where(final_feature != data2)
+    # mismatched_indices = np.where(data1 != data2)
     # print(f"Number of mismatched elements: {len(mismatched_indices[0])}")
     # print(f"Example mismatched indices: {mismatched_indices[0][:10]}")  # 최대 10개만 표시
 
     # # 6. 데이터의 요약 통계량 비교
     # print("\nSummary statistics for file1:")
-    # print(f"Mean: {np.mean(final_feature)}, Min: {np.min(final_feature)}, Max: {np.max(final_feature)}")
+    # print(f"Mean: {np.mean(data1)}, Min: {np.min(data1)}, Max: {np.max(data1)}")
 
     # print("\nSummary statistics for file2:")
     # print(f"Mean: {np.mean(data2)}, Min: {np.min(data2)}, Max: {np.max(data2)}")

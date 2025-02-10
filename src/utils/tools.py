@@ -72,14 +72,14 @@ def uniform_extract(feat, t_max, avg: bool = True):
             
     return new_feat
 
-def pad(feat, min_len):
+def pad(feat, min_len): # 최소 길이 보다 작다면 padding
     clip_length = feat.shape[0]
     if clip_length <= min_len:
        return np.pad(feat, ((0, min_len - clip_length), (0, 0)), mode='constant', constant_values=0)
     else:
        return feat
 
-def process_feat(feat, length, is_random=False):
+def process_feat(feat, length, is_random=False):    # length는 최소 길이 256
     clip_length = feat.shape[0]
     if feat.shape[0] > length:
         if is_random:

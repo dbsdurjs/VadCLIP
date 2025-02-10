@@ -168,12 +168,12 @@ if __name__ == '__main__':
 
     label_map = dict({'Normal': 'normal', 'Abuse': 'abuse', 'Arrest': 'arrest', 'Arson': 'arson', 'Assault': 'assault', 'Burglary': 'burglary', 'Explosion': 'explosion', 'Fighting': 'fighting', 'RoadAccidents': 'roadAccidents', 'Robbery': 'robbery', 'Shooting': 'shooting', 'Shoplifting': 'shoplifting', 'Stealing': 'stealing', 'Vandalism': 'vandalism'})
 
-    normal_dataset = UCFDataset(args.visual_length, args.train_list, False, label_map, True)
+    normal_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, True, args.using_caption)
     normal_loader = DataLoader(normal_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    anomaly_dataset = UCFDataset(args.visual_length, args.train_list, False, label_map, False)
+    anomaly_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, False, args.using_caption)
     anomaly_loader = DataLoader(anomaly_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
 
-    test_dataset = UCFDataset(args.visual_length, args.test_list, True, label_map)
+    test_dataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
