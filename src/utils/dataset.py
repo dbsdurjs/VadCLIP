@@ -55,7 +55,8 @@ class UCFDataset(data.Dataset):
                 pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
                 clip_cap_feature = np.pad(clip_cap_feature, ((0, pad_frames), (0, 0)), mode='constant', constant_values=0)
 
-            clip_feature = clip_feature + clip_cap_feature
+            clip_feature = np.concatenate([clip_feature, clip_cap_feature], axis=1)
+
 
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
