@@ -104,7 +104,7 @@ def generate_captions(dataloader, model, processor, device):
                 output_file = os.path.join(video_folder_path, f"{os.path.basename(video_folder_path)}.txt")
 
                 with open(output_file, "a", encoding="utf-8") as f:
-                    f.write(f"{frame_number}: {caption}")
+                    f.write(f"{frame_number}: {caption}\n")
 
                 # print(f'🖼️ Frame: {frame_number} | 📜 Caption: {caption}')
 
