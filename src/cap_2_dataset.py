@@ -27,8 +27,7 @@ class FrameDataset(Dataset):
 
         classes_names = os.listdir(base_folder)
         # classes_names = classes_names[:8]   # 8개 작업, 서버에서 바꾸기
-        certain_index = classes_names.index['Assault']
-        print(certain_index)
+        certain_index = classes_names.index('Assault')
 
         classes_names = classes_names[certain_index]
         print(f'작업 폴더 이름 : {classes_names}')
@@ -116,7 +115,7 @@ def generate_captions(dataloader, model, processor, device):
 def delete_existing_files(base_folder):
 
     classes_names = os.listdir(base_folder)
-    certain_index = classes_names.index['Assault']
+    certain_index = classes_names.index('Assault')
     classes_names = classes_names[certain_index]
 
     print(f"삭제할 작업 폴더: {classes_names}")
