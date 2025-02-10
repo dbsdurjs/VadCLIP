@@ -26,10 +26,11 @@ class FrameDataset(Dataset):
         self.processor = processor  # processor를 멤버 변수로 저장
 
         classes_names = os.listdir(base_folder)
-        # classes_names = classes_names[:8]   # 8개 작업, 서버에서 바꾸기
-        certain_index = [classes_names.index('Assault')]
+        if 'Assault' in classes_names:
+            classes_names = ['Assault']  # 또는, 특정 인덱스를 구한 뒤 리스트로 감싸기: [classes_names[classes_names.index('Assault')]]
+        else:
+            classes_names = []  # 혹은 에러 처리
 
-        classes_names = classes_names[certain_index]
         print(f'작업 폴더 이름 : {classes_names}')
 
         for class_name in os.listdir(base_folder):
@@ -115,8 +116,10 @@ def generate_captions(dataloader, model, processor, device):
 def delete_existing_files(base_folder):
 
     classes_names = os.listdir(base_folder)
-    certain_index = classes_names.index('Assault')
-    classes_names = [classes_names[certain_index]]
+    if 'Assault' in classes_names:
+        classes_names = ['Assault']  # 또는, 특정 인덱스를 구한 뒤 리스트로 감싸기: [classes_names[classes_names.index('Assault')]]
+    else:
+        classes_names = []  # 혹은 에러 처리
 
     print(f"삭제할 작업 폴더: {classes_names}")
 
