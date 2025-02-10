@@ -28,6 +28,8 @@ class FrameDataset(Dataset):
         classes_names = os.listdir(base_folder)
         # classes_names = classes_names[:8]   # 8개 작업, 서버에서 바꾸기
         certain_index = classes_names.index['Assault']
+        print(certain_index)
+
         classes_names = classes_names[certain_index]
         print(f'작업 폴더 이름 : {classes_names}')
 
