@@ -14,7 +14,7 @@ def average_features(features, group_size=16):
 
 if __name__ == '__main__':
     # -------------------------------------------------------------------------------
-    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature/Shoplifting/Shoplifting012_x264/Shoplifting012_x264.npy'
+    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature/Assault/Assault003_x264/Assault003_x264.npy'
     file2 = '/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/gt_segment_ucf.npy'
     
     data1 = np.load(file1, allow_pickle=True)

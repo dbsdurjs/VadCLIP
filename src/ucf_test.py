@@ -95,7 +95,7 @@ if __name__ == '__main__':
 
     label_map = dict({'Normal': 'Normal', 'Abuse': 'Abuse', 'Arrest': 'Arrest', 'Arson': 'Arson', 'Assault': 'Assault', 'Burglary': 'Burglary', 'Explosion': 'Explosion', 'Fighting': 'Fighting', 'RoadAccidents': 'RoadAccidents', 'Robbery': 'Robbery', 'Shooting': 'Shooting', 'Shoplifting': 'Shoplifting', 'Stealing': 'Stealing', 'Vandalism': 'Vandalism'})
 
-    testdataset = UCFDataset(args.visual_length, args.test_list, True, label_map)
+    testdataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     testdataloader = DataLoader(testdataset, batch_size=1, shuffle=False)
 
     prompt_text = get_prompt_text(label_map)

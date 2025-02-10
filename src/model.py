@@ -184,8 +184,10 @@ class CLIPVAD(nn.Module):
         return x
 
     def encode_textprompt(self, text):
-        word_tokens = clip.tokenize(text).to(self.device)   # tokenizer(label)
-        word_embedding = self.clipmodel.encode_token(word_tokens)
+        word_tokens = clip.tokenize(text).to(self.device)   # tokenizer(label), (14,77)
+        print(word_tokens.shape)
+        word_embedding = self.clipmodel.encode_token(word_tokens)   # (14,77,512)
+        print(word_embedding.shape)
         text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])
         text_tokens = torch.zeros(len(text), 77).to(self.device)
 
