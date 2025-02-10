@@ -2,6 +2,7 @@ import os
 import torch
 from clip import clip
 import numpy as np
+from compare import *
 
 if __name__ == '__main__':
     # device 설정
@@ -19,7 +20,7 @@ if __name__ == '__main__':
     os.makedirs(output_dir, exist_ok=True)
 
     group_size = 16
-    batch_size = 32  # 한 번에 처리할 캡션 개수를 줄임
+    batch_size = 64  # 한 번에 처리할 캡션 개수를 줄임
 
     # 재귀적으로 텍스트 파일 찾기
     for dirpath, dirnames, filenames in os.walk(root_text_dir):
