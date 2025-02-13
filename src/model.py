@@ -159,10 +159,10 @@ class CLIPVAD(nn.Module):
         return output
 
     def encode_video(self, images, padding_mask, lengths):  # LGT Adapter
-        images = images.to(torch.float)
+        images = images.to(torch.float) # (batch size, 256, 512)
         position_ids = torch.arange(self.visual_length, device=self.device)
-        position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)
-        frame_position_embeddings = self.frame_position_embeddings(position_ids)
+        position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)    # (batch size,256)
+        frame_position_embeddings = self.frame_position_embeddings(position_ids)    # (batch size, 256, 512)
         frame_position_embeddings = frame_position_embeddings.permute(1, 0, 2)
         images = images.permute(1, 0, 2) + frame_position_embeddings
 
@@ -184,42 +184,49 @@ class CLIPVAD(nn.Module):
         return x
 
     def encode_textprompt(self, text):
-        word_tokens = clip.tokenize(text).to(self.device)   # tokenizer(label), (14,77)
-        word_embedding = self.clipmodel.encode_token(word_tokens)   # (14,77,512)
-        text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])
-        text_tokens = torch.zeros(len(text), 77).to(self.device)
+        word_tokens = clip.tokenize(text).to(self.device)   # 클래스 토큰 생성, tokenizer(label), (14,77)
+        word_embedding = self.clipmodel.encode_token(word_tokens)   # 클래스 토큰 임베딩, (14,77,512)
+        text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])  # (14,77,512)
+        text_tokens = torch.zeros(len(text), 77).to(self.device)    # (14, 77)
 
         for i in range(len(text)):
-            ind = torch.argmax(word_tokens[i], -1)
-            text_embeddings[i, 0] = word_embedding[i, 0]
-            text_embeddings[i, self.prompt_prefix + 1: self.prompt_prefix + ind] = word_embedding[i, 1: ind]
-            text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix] = word_embedding[i, ind]
-            text_tokens[i, self.prompt_prefix + ind + self.prompt_postfix] = word_tokens[i, ind]
+            ind = torch.argmax(word_tokens[i], -1)  # 제일 큰 값을 가지는 인덱스 추출(보통 EOT값)
+            text_embeddings[i, 0] = word_embedding[i, 0]    # 시작 토큰 배치
+            text_embeddings[i, self.prompt_prefix + 1: self.prompt_prefix + ind] = word_embedding[i, 1: ind]    # 11~10+ind까지는 클래스 임베딩 사용
+            text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix] = word_embedding[i, ind] # 20 + ind에 클래스 임베딩의 max 토큰(보통 EOT) 사용
+            text_tokens[i, self.prompt_prefix + ind + self.prompt_postfix] = word_tokens[i, ind]    # max 토큰 이외에는 0으로 지정
+            # 논문에서는 20개의 learnable prompt를 사용한다고 했지만 실제로는 77개 사용
+            # 아래와 같이 EOT 토큰 이후의 값을 0으로 설정해서 사용하지 않았지만 성능 변화는 없었음
+            # text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix + 1:] = 0
 
-        text_features = self.clipmodel.encode_text(text_embeddings, text_tokens)
+        text_features = self.clipmodel.encode_text(text_embeddings, text_tokens)    # (14,512)
 
         return text_features
 
     def forward(self, visual, padding_mask, text, lengths):
-        visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([128, 256, 512])
+        visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
         logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))
-
-        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text)
+        #
+        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
 
         text_features = text_features_ori
-        logits_attn = logits1.permute(0, 2, 1)
-        visual_attn = logits_attn @ visual_features
-        visual_attn = visual_attn / visual_attn.norm(dim=-1, keepdim=True)
-        visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])
-        text_features = text_features_ori.unsqueeze(0)
-        text_features = text_features.expand(visual_attn.shape[0], text_features.shape[1], text_features.shape[2])
+        logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256)
+        visual_attn = logits_attn @ visual_features # aggregate(visual features, logits1), (batch, 1, 512)
+        visual_attn = visual_attn / visual_attn.norm(dim=-1, keepdim=True)  # aggregate(visual features, logits1)
+        visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])    # (batch, 14, 512)
+        
+        text_features = text_features_ori.unsqueeze(0)  # (1, 14, 512)
+        text_features = text_features.expand(visual_attn.shape[0], text_features.shape[1], text_features.shape[2]) # (batch, 14, 512)
         text_features = text_features + visual_attn # visual prompt(vision + Text)
-        text_features = text_features + self.mlp1(text_features)    # visual prompt(ffn(text features) + text features)
+        text_features = text_features + self.mlp1(text_features) # label features = visual prompt(ffn(text features) + text features), (batch, 14, 512)
+        print(f'visual_features : {visual_features.shape} | text_features : {text_features.shape}')
 
-        visual_features_norm = visual_features / visual_features.norm(dim=-1, keepdim=True)
+        visual_features_norm = visual_features / visual_features.norm(dim=-1, keepdim=True) # (batch, 256, 512)
         text_features_norm = text_features / text_features.norm(dim=-1, keepdim=True)
-        text_features_norm = text_features_norm.permute(0, 2, 1)
-        logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07
+        text_features_norm = text_features_norm.permute(0, 2, 1)    # (batch, 512, 14)
+        print(f'visual_features_norm : {visual_features_norm.shape} | text_features_norm : {text_features_norm.shape}')
+        logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 14)
 
+        print(logits2.shape)
         return text_features_ori, logits1, logits2
     

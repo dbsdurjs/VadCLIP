@@ -39,38 +39,23 @@ if __name__ == '__main__':
                     continue
 
                 # 배치 처리
-                # all_features = []
-                # for i in range(0, len(captions), batch_size):
-                #     batch_captions = captions[i:i+batch_size]
-                #     tokens = clip.tokenize(batch_captions).to(device)
-                #     # 여기서는 model.encode_text_cap()를 사용하지만, 표준 CLIP이라면 model.encode_text(tokens)를 사용
-                #     batch_features = model.encode_text_cap(tokens)
-                #     batch_features = batch_features.float().detach().cpu().numpy()
-                #     all_features.append(batch_features)
-                    
-                #     # 배치 처리 후 캐시 비우기
-                #     torch.cuda.empty_cache()
                 all_features = []
-                for i in range(0, len(captions)):
-                    tokens = clip.tokenize(captions[i]).to(device)
-                    # 여기서는 model.encode_text_cap()를 사용하지만, 표준 CLIP이라면 model.encode_text(tokens)를 사용
-                    batch_features = model.encode_text_cap(tokens)
-                    print(captions[i])
-                    print(batch_features.shape)
-                    print(batch_features)
+                for i in range(0, len(captions), batch_size):
+                    batch_captions = captions[i:i+batch_size] # len = batch size
+                    tokens = clip.tokenize(batch_captions).to(device)   # (batch size, 77)
+                    batch_features = model.encode_text_cap(tokens) # (batch size, 512)
                     batch_features = batch_features.float().detach().cpu().numpy()
                     all_features.append(batch_features)
-                    if i==5:
-                        continue
                     
                     # 배치 처리 후 캐시 비우기
                     torch.cuda.empty_cache()
-                # text_features = np.concatenate(all_features, axis=0)  # shape: [전체 캡션 수, feature_dim]
 
-                # grouped_features = average_features(text_features, group_size=16)
-                # rel_path = os.path.relpath(dirpath, root_text_dir)
-                # out_subdir = os.path.join(output_dir, rel_path)
-                # os.makedirs(out_subdir, exist_ok=True)
-                # output_file = os.path.join(out_subdir, filename.replace(".txt", ".npy"))
-                # np.save(output_file, grouped_features)
-                # print(f"Saved {output_file} with shape {grouped_features.shape}")
+                text_features = np.concatenate(all_features, axis=0)  # shape: [전체 캡션 수, feature_dim]
+
+                grouped_features = average_features(text_features, group_size=16)
+                rel_path = os.path.relpath(dirpath, root_text_dir)
+                out_subdir = os.path.join(output_dir, rel_path)
+                os.makedirs(out_subdir, exist_ok=True)
+                output_file = os.path.join(out_subdir, filename.replace(".txt", ".npy"))
+                np.save(output_file, grouped_features)
+                print(f"Saved {output_file} with shape {grouped_features.shape}")

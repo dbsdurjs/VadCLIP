@@ -21,7 +21,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     with torch.no_grad():
         for i, item in enumerate(testdataloader):
             visual = item[0].squeeze(0)
-            length = item[2]
+            length = item[2] # padding 256 사이즈에서 실제 프레임 수만큼 줄이기
 
             length = int(length)
             len_cur = length
@@ -46,10 +46,10 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
             _, logits1, logits2 = model(visual, padding_mask, prompt_text, lengths)
 
-            logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2])
-            logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2])
+            logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2]) # (batch, 256, 1) -> (256, 1)
+            logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2]) # (batch, 256, 14) -> (256, 14)
 
-            prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1))
+            prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1)) # normal 클래스 값들만 1에서 빼줌
             prob1 = torch.sigmoid(logits1[0:len_cur].squeeze(-1))
 
             if i == 0:
@@ -60,8 +60,8 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                 ap1 = torch.cat([ap1, prob1], dim=0)
                 ap2 = torch.cat([ap2, prob2], dim=0)
 
-            element_logits2 = logits2[0:len_cur].softmax(dim=-1).detach().cpu().numpy()
-            element_logits2 = np.repeat(element_logits2, 16, 0)
+            element_logits2 = logits2[0:len_cur].softmax(dim=-1).detach().cpu().numpy() # (clip 수, 14)
+            element_logits2 = np.repeat(element_logits2, 16, 0) # 16으로 나누기 전으로 돌리는? (clip 수 * 16, 클래스 수), 아마 인접 16프레임은 anomaly가 일어나지 않기에 이렇게 계산하는듯?
             element_logits2_stack.append(element_logits2)
 
     ap1 = ap1.cpu().numpy()
@@ -97,7 +97,7 @@ if __name__ == '__main__':
 
     testdataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     testdataloader = DataLoader(testdataset, batch_size=1, shuffle=False)
-
+    #test 시 동영상 1개씩 처리
     prompt_text = get_prompt_text(label_map)
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)

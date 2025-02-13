@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 writer = SummaryWriter()
 
-def CLASM(logits, labels, lengths, device):
+def CLASM(logits, labels, lengths, device): # fine grained
     instance_logits = torch.zeros(0).to(device)
     labels = labels / torch.sum(labels, dim=1, keepdim=True)
     labels = labels.to(device)
@@ -28,7 +28,7 @@ def CLASM(logits, labels, lengths, device):
     milloss = -torch.mean(torch.sum(labels * F.log_softmax(instance_logits, dim=1), dim=1), dim=0)
     return milloss
 
-def CLAS2(logits, labels, lengths, device):
+def CLAS2(logits, labels, lengths, device): # coarse grained
     instance_logits = torch.zeros(0).to(device)
     labels = 1 - labels[:, 0].reshape(labels.shape[0])
     labels = labels.to(device)
@@ -85,11 +85,11 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
                 text_features, logits1, logits2 = model(visual_features, None, prompt_text, feat_lengths)
                 
-                #loss1
+                #loss1 - coarse grained
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device)
                 loss_total1 += loss1.item()
                 
-                #loss2
+                #loss2 - fine grained
                 loss2 = CLASM(logits2, text_labels, feat_lengths, device)
 
                 loss_total2 += loss2.item()

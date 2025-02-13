@@ -14,13 +14,13 @@ def average_features(features, group_size=16):
 
 if __name__ == '__main__':
     # -------------------------------------------------------------------------------
-    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature/Assault/Assault003_x264/Assault003_x264.npy'
-    file2 = '/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/gt_segment_ucf.npy'
+    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature/Arson/Arson007_x264/Arson007_x264.npy'
+    file2 = '/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/gt_ucf_10videos.npy'    # (129392,)
     
     data1 = np.load(file1, allow_pickle=True)
     data2 = np.load(file2, allow_pickle=True)
 
-    print(data1.shape)
+    print(data2[1001:1200])
     # print(data2.shape)
 
     # final_feature = average_features(data1, group_size=16)

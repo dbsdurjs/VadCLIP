@@ -36,6 +36,7 @@ class UCFDataset(data.Dataset):
         clip_path = self.df.loc[index]['path']
         clip_feature = np.load(clip_path)
         alpha = 0.3
+        
         if self.using_caption:
             base_file = os.path.basename(clip_path)
             base_video_name = base_file.split('__')[0]

@@ -19,8 +19,8 @@ for idx in range(lists.shape[0]):
     if '__0.npy' not in name:
         continue
     #feature = name.split('label_')[-1]
-    fea = np.load(name)
-    lens = (fea.shape[0] + 1) * clip_len
+    fea = np.load(name) # (clip 수, 512)
+    lens = (fea.shape[0] + 1) * clip_len # 총 130048
     name = name.split('/')[-1]
     name = name[:-7]
     # the number of testing images in this sub-dir
@@ -30,16 +30,17 @@ for idx in range(lists.shape[0]):
         for gt_line in gt_lines:
             if name in gt_line:
                 count += 1
-                gt_content = gt_line.strip('\n').split('  ')[1:-1]
+                gt_content = gt_line.strip('\n').split('  ')[1:-1]  # ['class', 'anomaly 구간', 'anomaly 구간', 'anomaly 구간', 'anomaly 구간']
                 abnormal_fragment = [[int(gt_content[i]),int(gt_content[j])] for i in range(1,len(gt_content),2) \
-                                        for j in range(2,len(gt_content),2) if j==i+1]
+                                        for j in range(2,len(gt_content),2) if j==i+1] # [[첫번째 anomaly 구간], [두번째 anomaly 구간]]
                 if len(abnormal_fragment) != 0:
                     abnormal_fragment = np.array(abnormal_fragment)
                     for frag in abnormal_fragment:
                         if frag[0] != -1 and frag[1] != -1:
                             gt_vec[frag[0]:frag[1]]=1.0
-                break
-    gt.extend(gt_vec[:-clip_len])
+                            print(gt_vec.shape)
+#                 break
+#     gt.extend(gt_vec[:-clip_len])
 
-print(count)
-np.save('list/gt_ucf_10videos.npy', gt)
+# print(count)
+# np.save('list/gt_ucf_10videos.npy', gt)

@@ -287,7 +287,7 @@ class CLIP(nn.Module):
         )
 
         self.vocab_size = vocab_size
-        self.token_embedding = nn.Embedding(vocab_size, transformer_width)
+        self.token_embedding = nn.Embedding(vocab_size, transformer_width)  # vocab size 는 input 최대 원소 값보다 커야함
         self.positional_embedding = nn.Parameter(torch.empty(self.context_length, transformer_width))
         self.ln_final = LayerNorm(transformer_width)
 
@@ -346,21 +346,21 @@ class CLIP(nn.Module):
 
     def encode_text(self, text, token):
         #x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
-        x = text.type(self.dtype) + self.positional_embedding.type(self.dtype)
+        x = text.type(self.dtype) + self.positional_embedding.type(self.dtype) # (14, 77, 512) + (77, 512)
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.transformer(x)
-        x = x.permute(1, 0, 2)  # LND -> NLD
-        x = self.ln_final(x).type(self.dtype)
+        x = self.transformer(x) # (77, 14, 512)
+        x = x.permute(1, 0, 2)  # LND -> NLD, (14, 77, 512)
+        x = self.ln_final(x).type(self.dtype) # layernorm
 
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = x[torch.arange(x.shape[0]), token.argmax(dim=-1)] @ self.text_projection
+        x = x[torch.arange(x.shape[0]), token.argmax(dim=-1)] @ self.text_projection    # 최종 learnable prompt 생성
 
         return x
     
     def encode_text_cap(self, text): # 기존 CLIP encode_text 코드(여기선 caption feature 추출)
-        x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
-
+        # text.shape (batch size, 77)
+        x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model], (batch size, 77, 512)
         x = x + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
         x = self.transformer(x)
@@ -370,7 +370,7 @@ class CLIP(nn.Module):
         # x.shape = [batch_size, n_ctx, transformer.width]
         # take features from the eot embedding (eot_token is the highest number in each sequence)
         x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
-
+        # print('final', x.shape)
         return x
 
     def forward(self, image, text):
