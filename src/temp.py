@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 
 # 기존 CSV 파일 경로
@@ -6,10 +7,19 @@ csv_path = "/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/ucf_CLIP_rgb_capt
 # CSV 파일 읽기
 df = pd.read_csv(csv_path)
 
-# 'path' 컬럼이 "__0.npy"로 끝나는 행만 필터링
-df_filtered = df[df["path"].str.endswith("__0.npy")]
+# 각 행의 'path' 열을 수정
+def modify_path(old_path):
+    # old_path 예: 
+    # /.../all_ucfclip_caption_feature/Abuse/Abuse001_x264.npy
+    dir_path, filename = os.path.split(old_path)  # dir_path: .../Abuse, filename: Abuse001_x264.npy
+    basename, ext = os.path.splitext(filename)    # basename: Abuse001_x264, ext: .npy
+    # 새 경로: 기존 폴더 안에 basename 폴더를 만들고, 그 안에 파일을 위치
+    new_path = os.path.join(dir_path, basename, filename)
+    return new_path
 
-# 필터링 결과를 새로운 CSV 파일로 저장 (원본을 덮어쓰고 싶다면 csv_path로 저장)
-df_filtered.to_csv(csv_path, index=False)
+# 'path' 열에 적용
+df["path"] = df["path"].apply(modify_path)
 
-print(f"Filtered CSV 파일이 생성되었습니다: filtered_csv_file.csv")
+# 새 CSV 파일로 저장
+df.to_csv(csv_path, index=False)
+print(f"새 CSV 파일이 생성되었습니다: {csv_path}")

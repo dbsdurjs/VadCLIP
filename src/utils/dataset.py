@@ -35,7 +35,7 @@ class UCFDataset(data.Dataset):
     def __getitem__(self, index):
         clip_path = self.df.loc[index]['path']
         clip_feature = np.load(clip_path)
-        alpha = 0.3
+        alpha = 1
         
         if self.using_caption:
             base_file = os.path.basename(clip_path)
