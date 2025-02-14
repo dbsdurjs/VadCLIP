@@ -49,7 +49,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2]) # (batch, 256, 1) -> (256, 1)
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2]) # (batch, 256, 14) -> (256, 14)
 
-            prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1)) # normal 클래스 값들만 1에서 빼줌
+            prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1)) # normal 클래스 값들 추출해서 1에서 빼줌
             prob1 = torch.sigmoid(logits1[0:len_cur].squeeze(-1))
 
             if i == 0:
@@ -74,7 +74,10 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
 
     ROC2 = roc_auc_score(gt, np.repeat(ap2, 16))    # softmax 방식(multi-class classification)
     AP2 = average_precision_score(gt, np.repeat(ap2, 16))   # softmax 방식(multi-class classification)
-
+    
+    # gt는 동영상 프레임에 대한 n/a를 나타냄 [0,0,0,1,1,...]
+    # ROC1 : C-branch에서 직접 anomaly confidence를 구하는 법
+    # ROC2 : A-branch에서 간접 anomaly confidence를 구하는 법(1-normal class 확률 = anomaly class 확률)
     print(f"AUC1: {ROC1:.4f}, AP1: {AP1:.4f}")
     print(f"AUC2: {ROC2:.4f}, AP2: {AP2:.4f}")
 

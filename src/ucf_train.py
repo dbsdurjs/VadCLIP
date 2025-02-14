@@ -44,9 +44,9 @@ def CLAS2(logits, labels, lengths, device): # coarse grained
 
 def train(model, normal_loader, anomaly_loader, testloader, args, label_map, device):
     model.to(device)
-    gt = np.load(args.gt_path)   # frame-level gt
+    gt = np.load(args.gt_path)   # frame-level gt, 동영상 1 : [0,0,0,1,1,1,1,0,..], 동영상 2 : [0,0,0,0,0,0,1,1,..]
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)   # anomaly gt 구간
-    gtlabels = np.load(args.gt_label_path, allow_pickle=True)   # 클래스 gt(normal : A, Abuse, Fighting..)
+    gtlabels = np.load(args.gt_label_path, allow_pickle=True)   # 클래스 gt(normal : A, Abuse, Arrest..)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
