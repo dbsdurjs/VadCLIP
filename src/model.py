@@ -107,7 +107,12 @@ class CLIPVAD(nn.Module):
             ("c_proj", nn.Linear(visual_width * 4, visual_width))
         ]))
         self.classifier = nn.Linear(visual_width, 1)
-
+        self.proj = nn.Linear(1024, 512) # add
+        self.proj2 = nn.Sequential( # add
+            nn.Linear(1024, 768),
+            nn.LeakyReLU(),
+            nn.Linear(768, 512)
+        )
         self.clipmodel, _ = clip.load("ViT-B/16", device)
         for clip_param in self.clipmodel.parameters():
             clip_param.requires_grad = False
@@ -159,6 +164,7 @@ class CLIPVAD(nn.Module):
         return output
 
     def encode_video(self, images, padding_mask, lengths):  # LGT Adapter
+        images = self.proj2(images)  # add
         images = images.to(torch.float) # (batch size, 256, 512)
         position_ids = torch.arange(self.visual_length, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)    # (batch size,256)
