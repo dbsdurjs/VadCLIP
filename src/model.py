@@ -219,14 +219,14 @@ class CLIPVAD(nn.Module):
         text_features = text_features.expand(visual_attn.shape[0], text_features.shape[1], text_features.shape[2]) # (batch, 14, 512)
         text_features = text_features + visual_attn # visual prompt(vision + Text)
         text_features = text_features + self.mlp1(text_features) # label features = visual prompt(ffn(text features) + text features), (batch, 14, 512)
-        print(f'visual_features : {visual_features.shape} | text_features : {text_features.shape}')
+        # print(f'visual_features : {visual_features.shape} | text_features : {text_features.shape}')
 
         visual_features_norm = visual_features / visual_features.norm(dim=-1, keepdim=True) # (batch, 256, 512)
         text_features_norm = text_features / text_features.norm(dim=-1, keepdim=True)
         text_features_norm = text_features_norm.permute(0, 2, 1)    # (batch, 512, 14)
-        print(f'visual_features_norm : {visual_features_norm.shape} | text_features_norm : {text_features_norm.shape}')
+        # print(f'visual_features_norm : {visual_features_norm.shape} | text_features_norm : {text_features_norm.shape}')
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 14)
 
-        print(logits2.shape)
+        # print(logits2.shape)
         return text_features_ori, logits1, logits2
     
