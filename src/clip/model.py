@@ -290,7 +290,7 @@ class CLIP(nn.Module):
         self.token_embedding = nn.Embedding(vocab_size, transformer_width)  # vocab size 는 input 최대 원소 값보다 커야함
         self.positional_embedding = nn.Parameter(torch.empty(self.context_length, transformer_width))
         self.ln_final = LayerNorm(transformer_width)
-
+        
         self.text_projection = nn.Parameter(torch.empty(transformer_width, embed_dim))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
 
