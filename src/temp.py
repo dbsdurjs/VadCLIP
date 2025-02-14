@@ -12,7 +12,7 @@ if __name__ == '__main__':
     # 새로운 데이터셋의 최상위 root 디렉토리 (학습에 사용할 ucfclip_caption_feature 폴더)
     new_root_dir = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames_with_10videos'
     # 생성할 새로운 CSV 파일 경로
-    new_csv_path = "/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/ucf_CLIP_rgb_10videos.csv" # train
+    new_csv_path = "/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/ucf_CLIP_rgb_caption.csv" # train
     # new_csv_path = "/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/ucf_CLIP_rgbtest_10videos.csv"   # test
 
     with open(old_csv_path, 'r', encoding='utf-8') as fin, \
