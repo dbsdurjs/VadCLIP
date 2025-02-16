@@ -112,6 +112,11 @@ class CLIPVAD(nn.Module):
             nn.LeakyReLU(),
             nn.Linear(768, 512)
         )
+        self.representation_feat = nn.Sequential(   # add idea7
+            nn.Linear(1024, 512),
+            nn.ReLU(),
+            nn.Linear(512,1024),
+        )
         self.clipmodel, _ = clip.load("ViT-B/16", device)
         for clip_param in self.clipmodel.parameters():
             clip_param.requires_grad = False
@@ -209,9 +214,10 @@ class CLIPVAD(nn.Module):
         return text_features
 
     def forward(self, visual, padding_mask, text, lengths):
-        visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
+        visual_features = self.representation_feat(visual) # add idea7
+        visual_features = self.encode_video(visual_features, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
         logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))
-        #
+
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
 
         text_features = text_features_ori

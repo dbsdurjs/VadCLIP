@@ -1,25 +1,18 @@
 import os
 import pandas as pd
+from utils.dataset import UCFDataset
+import ucf_option
+from torch.utils.data import DataLoader
 
-# 기존 CSV 파일 경로
-csv_path = "/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/ucf_CLIP_rgb_caption.csv"  # 예: "list/ucf_CLIP_rgb.csv"
 
-# CSV 파일 읽기
-df = pd.read_csv(csv_path)
+if __name__ == '__main__':
 
-# 각 행의 'path' 열을 수정
-def modify_path(old_path):
-    # old_path 예: 
-    # /.../all_ucfclip_caption_feature/Abuse/Abuse001_x264.npy
-    dir_path, filename = os.path.split(old_path)  # dir_path: .../Abuse, filename: Abuse001_x264.npy
-    basename, ext = os.path.splitext(filename)    # basename: Abuse001_x264, ext: .npy
-    # 새 경로: 기존 폴더 안에 basename 폴더를 만들고, 그 안에 파일을 위치
-    new_path = os.path.join(dir_path, basename, filename)
-    return new_path
+    args = ucf_option.parser.parse_args()
+    label_map = dict({'Normal': 'normal', 'Abuse': 'abuse', 'Arrest': 'arrest', 'Arson': 'arson', 'Assault': 'assault', 'Burglary': 'burglary', 'Explosion': 'explosion', 'Fighting': 'fighting', 'RoadAccidents': 'roadAccidents', 'Robbery': 'robbery', 'Shooting': 'shooting', 'Shoplifting': 'shoplifting', 'Stealing': 'stealing', 'Vandalism': 'vandalism'})
 
-# 'path' 열에 적용
-df["path"] = df["path"].apply(modify_path)
+    normal_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, True, args.using_caption)
+    normal_loader = DataLoader(normal_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    anomaly_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, False, args.using_caption)
+    anomaly_loader = DataLoader(anomaly_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    print(len(anomaly_loader))
 
-# 새 CSV 파일로 저장
-df.to_csv(csv_path, index=False)
-print(f"새 CSV 파일이 생성되었습니다: {csv_path}")
