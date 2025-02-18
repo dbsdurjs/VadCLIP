@@ -1,45 +1,36 @@
 import os
+import shutil
 
-# ✅ 변환할 폴더 리스트 (동영상 파일명을 폴더명으로 변환)
-target_folders = [os.path.splitext(f)[0] for f in [
-    'Explosion046_x264.mp4', 'Arson019_x264.mp4', 'Normal_Videos_935_x264.mp4', 
-    'Normal_Videos308_x264.mp4', 'Normal_Videos307_x264.mp4', 'Normal_Videos633_x264.mp4',
-    'Normal_Videos946_x264.mp4', 'Normal_Videos471_x264.mp4', 'Normal_Videos947_x264.mp4',
-    'Normal_Videos472_x264.mp4', 'Normal_Videos425_x264.mp4', 'Normal_Videos547_x264.mp4',
-    'Normal_Videos138_x264.mp4', 'Normal_Videos529_x264.mp4', 'Normal_Videos530_x264.mp4',
-    'Normal_Videos450_x264.mp4', 'Normal_Videos666_x264.mp4', 'Normal_Videos449_x264.mp4'
-]]
+def copy_video_txt_files(source_root, target_root):
+    """
+    source_root: 동영상 파일들이 포함된 최상위 폴더
+    target_root: 복사한 파일들을 저장할 대상 폴더 (존재하지 않으면 생성)
+    """
+    # 대상 폴더 생성 (없으면 생성)
+    os.makedirs(target_root, exist_ok=True)
 
-# 📁 최상위 폴더 (Extracted_Frames/)
-base_folder = "/media/vcl/DATA/YG/Extracted_Frames/"    # server
+    # 소스 폴더 내를 재귀적으로 순회
+    for dirpath, dirnames, filenames in os.walk(source_root):
+        for filename in filenames:
+            # .txt 파일인 경우만 고려
+            if filename.endswith(".txt"):
+                # 현재 파일의 경로
+                file_path = os.path.join(dirpath, filename)
+                # 현재 파일이 위치한 폴더 이름
+                folder_name = os.path.basename(dirpath)
+                # 파일 이름이 폴더 이름과 동일한지 확인 (예: "Abuse001_x264.txt")
+                if filename == f"{folder_name}.txt":
+                    # 대상 경로: 원본의 상대 경로를 유지하면서 복사할 수 있음
+                    rel_path = os.path.relpath(dirpath, source_root)
+                    dest_dir = os.path.join(target_root, rel_path)
+                    os.makedirs(dest_dir, exist_ok=True)
+                    dest_file = os.path.join(dest_dir, filename)
+                    shutil.copy2(file_path, dest_file)
+                    print(f"Copied {file_path} to {dest_file}")
 
-def rename_images_in_selected_folders(base_folder, target_folders):
-    for class_folder in os.listdir(base_folder):
-        class_folder_path = os.path.join(base_folder, class_folder)
-        
-        if not os.path.isdir(class_folder_path):  # 폴더인지 확인
-            continue
+if __name__ == '__main__':
+    # 예시 경로 (필요에 맞게 수정)
+    source_root = "/media/vcl/DATA/YG/Extracted_Frames/"
+    target_root = "/media/vcl/DATA/YG/Extracted_Frames/Extracted_Frames_captions/"
 
-        # 🎥 특정 동영상 폴더만 변경
-        for video_folder in os.listdir(class_folder_path):
-            if video_folder not in target_folders:
-                continue  # 제외된 폴더는 변경하지 않음
-
-            video_folder_path = os.path.join(class_folder_path, video_folder)
-            if not os.path.isdir(video_folder_path):
-                continue
-
-            print(f"📂 Processing folder: {video_folder}")
-
-            # 📌 이미지 파일 이름 변경
-            for file_name in os.listdir(video_folder_path):
-                if file_name.lower().endswith(".jpg"):
-                    old_path = os.path.join(video_folder_path, file_name)
-                    new_name = f"{video_folder}_{file_name}"  # 폴더명_파일명.jpg
-                    new_path = os.path.join(video_folder_path, new_name)
-
-                    os.rename(old_path, new_path)
-                    print(f"✅ Renamed: {file_name} → {new_name}")
-
-# 실행
-rename_images_in_selected_folders(base_folder, target_folders)
+    copy_video_txt_files(source_root, target_root)
