@@ -11,6 +11,17 @@ from utils.tools import get_batch_mask, get_prompt_text
 from utils.ucf_detectionMAP import getDetectionMAP as dmAP
 import ucf_option
 
+import logging
+
+# 로그 파일 설정
+logging.basicConfig(
+    filename='test_results.log',  # 기록할 로그 파일 이름
+    level=logging.INFO,           # INFO 레벨 이상의 로그를 기록
+    format='%(asctime)s %(levelname)s: %(message)s',  # 로그 메시지 포맷
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+
 def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device):
     
     model.to(device)
@@ -22,6 +33,8 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
         for i, item in enumerate(testdataloader):
             visual = item[0].squeeze(0)
             length = item[2] # padding 256 사이즈에서 실제 프레임 수만큼 줄이기
+            video_label = item[1] # add
+            video_basename = item[3] # add
 
             length = int(length)
             len_cur = length
@@ -63,6 +76,16 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
             element_logits2 = logits2[0:len_cur].softmax(dim=-1).detach().cpu().numpy() # (clip 수, 14)
             element_logits2 = np.repeat(element_logits2, 16, 0) # 16으로 나누기 전으로 돌리는? (clip 수 * 16, 클래스 수), 아마 인접 16프레임은 anomaly가 일어나지 않기에 이렇게 계산하는듯?
             element_logits2_stack.append(element_logits2)
+
+            # 비디오 전체에 대한 평균 anomaly score 계산
+            anomaly_score_ap1 = prob1.mean().item() # add
+            anomaly_score_ap2 = prob2.mean().item() # add
+            
+            # 로그 파일에 결과 기록
+            logging.info(f"Video: {video_basename}, GT Label: {video_label}, "
+                        f"Predicted anomaly score (AP1): {anomaly_score_ap1:.4f}, "
+                        f"AP2: {anomaly_score_ap2:.4f}") # add
+
 
     ap1 = ap1.cpu().numpy()
     ap2 = ap2.cpu().numpy()

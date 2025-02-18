@@ -37,8 +37,9 @@ class UCFDataset(data.Dataset):
         clip_feature = np.load(clip_path)
         lack_clip = 0
         lack_cap = 0
+        base_file = os.path.basename(clip_path)
+
         if self.using_caption:
-            base_file = os.path.basename(clip_path)
             base_video_name = base_file.split('__')[0]
 
             matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
@@ -72,7 +73,7 @@ class UCFDataset(data.Dataset):
 
         clip_feature = torch.tensor(clip_feature).float()
         clip_label = self.df.loc[index]['label']
-        return clip_feature, clip_label, clip_length
+        return clip_feature, clip_label, clip_length, base_file # add base_file
 
 class XDDataset(data.Dataset):
     def __init__(self, clip_dim: int, file_path: str, test_mode: bool, label_map: dict):
