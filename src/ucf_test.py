@@ -57,7 +57,7 @@ def read_annotation_intervals(annotation_file):
     return annotations
 
 exclude_list = ['Abuse', 'Arrest', 'Arson', 'Assault', 'Burglary', 'Explosion', 'Fighting', 'RoadAccidents', 'Robbery']
-def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device):
+def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, saved_video):
     
     model.to(device)
     model.eval()
@@ -144,33 +144,34 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     ROC2 = roc_auc_score(gt, np.repeat(ap2, 16))    # softmax 방식(multi-class classification)
     AP2 = average_precision_score(gt, np.repeat(ap2, 16))   # softmax 방식(multi-class classification)
     
-    anno = read_annotation_intervals(gt_txt)
-    for idx in range(len(video_names_list)):
-        vname = video_names_list[idx][0].split('__')[0] if isinstance(video_names_list[idx], tuple) else video_names_list[idx]
-        
-        match = re.match(r'([A-Za-z]+)', vname)
-        class_prefix = match.group(1) if match else vname
+    if saved_video:
+        anno = read_annotation_intervals(gt_txt)
+        for idx in range(len(video_names_list)):
+            vname = video_names_list[idx][0].split('__')[0] if isinstance(video_names_list[idx], tuple) else video_names_list[idx]
+            
+            # match = re.match(r'([A-Za-z]+)', vname)   # 미리 했던 작업이 있어서 제외하고 나머지 작업 코드
+            # class_prefix = match.group(1) if match else vname
 
-        if class_prefix in exclude_list:
-            continue
-        frame_path = find_video_folder(vname)
+            # if class_prefix in exclude_list:
+            #     continue
+            frame_path = find_video_folder(vname)
 
-        avg_class_scores = np.mean(element_logits2_stack[idx], axis=0)
-        best_class_idx = np.argmax(avg_class_scores)
-        vscores = element_logits2_stack[idx][:, best_class_idx]  # shape: (프레임 수,)
+            avg_class_scores = np.mean(element_logits2_stack[idx], axis=0)
+            best_class_idx = np.argmax(avg_class_scores)
+            vscores = element_logits2_stack[idx][:, best_class_idx]  # shape: (프레임 수,)
 
-        vpath = os.path.join(frame_base_folder, frame_path)
-        vfps = video_fps_list[idx][0]        # 동영상 fps
-        
-        # 저장 경로 지정 (예: vname.mp4 파일)
-        save_path = os.path.join(vpath, f"{vname}_visualization.mp4")
-        normal_label = prompt_text[0]  # 예시
-        imagefile_template = vname + "_frame_{:05d}.jpg" 
-        
-        anno_for_video = anno.get(vname, [])
-        visualize_video(vname, anno_for_video, vscores, vpath, vfps, save_path, normal_label, imagefile_template, None)
-        logging.info(f"Visualization video saved: {save_path}")
-        print(f"Visualization video saved: {save_path}")
+            vpath = os.path.join(frame_base_folder, frame_path)
+            vfps = video_fps_list[idx][0]        # 동영상 fps
+            
+            # 저장 경로 지정 (예: vname.mp4 파일)
+            save_path = os.path.join(vpath, f"{vname}_visualization.mp4")
+            normal_label = prompt_text[0]  # 예시
+            imagefile_template = vname + "_frame_{:05d}.jpg" 
+            
+            anno_for_video = anno.get(vname, [])
+            visualize_video(vname, anno_for_video, vscores, vpath, vfps, save_path, normal_label, imagefile_template, None)
+            logging.info(f"Visualization video saved: {save_path}")
+            print(f"Visualization video saved: {save_path}")
 
     # gt는 동영상 프레임에 대한 n/a를 나타냄 [0,0,0,1,1,...]
     # ROC1 : C-branch에서 직접 anomaly confidence를 구하는 법
@@ -207,4 +208,4 @@ if __name__ == '__main__':
     model_param = torch.load(args.model_path)
     model.load_state_dict(model_param)
 
-    test(model, testdataloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device)
+    test(model, testdataloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args.saved_video)
