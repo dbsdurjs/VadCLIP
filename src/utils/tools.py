@@ -14,7 +14,7 @@ def get_batch_label(texts, prompt_text, label_map: dict):
                 label_vector = label_vector.unsqueeze(0)
                 label_vectors = torch.cat([label_vectors, label_vector], dim=0)
         else:
-            for text in texts:
+            for text in texts: # len(texts) 128
                 label_vector = torch.zeros(len(prompt_text))
                 if text in label_map:
                     label_text = label_map[text]

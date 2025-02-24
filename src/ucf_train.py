@@ -22,9 +22,9 @@ def CLASM(logits, labels, lengths, device): # fine grained
     labels = labels.to(device)
 
     for i in range(logits.shape[0]):
-        tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True, dim=0)
-        instance_logits = torch.cat([instance_logits, torch.mean(tmp, 0, keepdim=True)], dim=0)
-
+        tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True, dim=0) # (lengths, 14) -> (k, 14)
+        instance_logits = torch.cat([instance_logits, torch.mean(tmp, 0, keepdim=True)], dim=0) # 각 클래스별 평균(열 평균)
+    # instance logits shape (128, 14)
     milloss = -torch.mean(torch.sum(labels * F.log_softmax(instance_logits, dim=1), dim=1), dim=0)
     return milloss
 
@@ -75,10 +75,10 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
             for i in range(min(len(normal_loader), len(anomaly_loader))):
                 step = 0
-                normal_features, normal_label, normal_lengths = next(normal_iter)   # normal features : torch.Size([64, 256, 512])
-                anomaly_features, anomaly_label, anomaly_lengths = next(anomaly_iter)   # anomaly features : torch.Size([64, 256, 512])
+                normal_features, normal_label, normal_lengths, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
+                anomaly_features, anomaly_label, anomaly_lengths, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
 
-                visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device)
+                visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # 128,256,1024
                 text_labels = list(normal_label) + list(anomaly_label)
                 feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
@@ -90,7 +90,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 loss_total1 += loss1.item()
                 
                 #loss2 - fine grained
-                loss2 = CLASM(logits2, text_labels, feat_lengths, device)
+                loss2 = CLASM(logits2, text_labels, feat_lengths, device) # logits2 shape (128, 256, 14)
 
                 loss_total2 += loss2.item()
                 #loss3
