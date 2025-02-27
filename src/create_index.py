@@ -171,7 +171,7 @@ def update_faiss_index(model, device, index, text_list):
 def build_file_names(video_captions, caption_to_frame_idxs, text_list, video_name, frame_interval):
     file_names = []
     for caption in text_list:
-        frame_idx = min(filter(lambda x: x % frame_interval == 0, caption_to_frame_idxs[caption]))
+        frame_idx = min(filter(lambda x: x % frame_interval == 0, caption_to_frame_idxs[caption])) # 각 캡션에 해당하는 프레임 중 16의 배수의 최소 인덱스 프레임
         file_names.append(f"{video_name}/{frame_idx}")
 
     return file_names

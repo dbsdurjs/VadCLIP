@@ -95,7 +95,6 @@ class ImageTextCaptionCleaner:
             faiss.normalize_L2(search_vectors)
 
             distances, indices = index.search(search_vectors, self.num_neighbors)
-
             self._retrieve_captions(
                 indices,
                 batch_frame_idxs,
@@ -130,7 +129,7 @@ class ImageTextCaptionCleaner:
         batch_clip_subsample_frame_paths = [
             uniform_temporal_subsample(clip_frame_paths, self.num_samples)
             for clip_frame_paths in batch_clip_frame_paths
-        ]
+        ] # num sample 수만큼 균등하게 샘플링
 
         batch_frame_paths = [
             frame_path
@@ -167,7 +166,6 @@ class ImageTextCaptionCleaner:
             file_name = file_names[indices[idx][0]] # ex Abuse001_x264.mp4/304
             ret_video_name, ret_index = file_name.split("/")
             ret_video_name = ret_video_name.split('.')[0]
-            captions_dir = Path(self.captions_dir_template.format(ret_video_name))
 
             match = re.match(r'([A-Za-z]+)', ret_video_name)
             if match:
@@ -175,7 +173,7 @@ class ImageTextCaptionCleaner:
                 if class_prefix == 'Normal':
                     class_prefix = 'Training_Normal_Videos_Anomaly'
 
-            video_caption_path = Path(captions_dir) / class_prefix / ret_video_name / f"{ret_video_name}.json"
+            video_caption_path = self.captions_dir_template / class_prefix / ret_video_name / f"{ret_video_name}.json"
             with open(video_caption_path) as f:
                 video_captions = json.load(f)
 
@@ -192,7 +190,6 @@ class ImageTextCaptionCleaner:
 
 def run(
     root_path: str,
-    annotationfile_path: str,
     batch_size: int,
     frame_interval: int,
     captions_dir_template: str,
@@ -233,17 +230,11 @@ def run(
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root_path", type=str, required=True)
-    parser.add_argument("--annotationfile_path", type=str, required=True)
-    parser.add_argument("--batch_size", type=int, default=1)
+    parser.add_argument("--batch_size", type=int, default=64)
     parser.add_argument("--frame_interval", type=int, default=16)
-    parser.add_argument("--output_dir", type=str, required=True)
-    parser.add_argument("--captions_dir_template", type=str, required=True)
-    parser.add_argument("--index_dir", type=str, required=True)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--pathname", type=str, default="*.json")
     parser.add_argument("--imagefile_template", type=str, default="{0}_frame_{1:05d}.jpg")
-    parser.add_argument("--fps", type=float, required=True)
     parser.add_argument("--clip_duration", type=float, default=10)
     parser.add_argument("--num_samples", type=int, default=10)
     parser.add_argument("--num_neighbors", type=int, default=1)
@@ -254,16 +245,23 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+    ucf_crime_dir = Path("/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes")
+    root_path = ucf_crime_dir / "Extracted_Frames"
+    captions_dir_template = ucf_crime_dir / "Extracted_Frames_captions"
+    index_dir = ucf_crime_dir / "create_index"
+    output_dir = ucf_crime_dir / "captions" / "clean"
+
+    fps = 30
+
     run(
-        root_path=args.root_path,
-        annotationfile_path=args.annotationfile_path,
+        root_path=root_path,
         batch_size=args.batch_size,
         frame_interval=args.frame_interval,
-        output_dir=args.output_dir,
-        captions_dir_template=args.captions_dir_template,
-        index_dir=args.index_dir,
+        output_dir=output_dir,
+        captions_dir_template=captions_dir_template,
+        index_dir=index_dir,
         imagefile_template=args.imagefile_template,
-        fps=args.fps,
+        fps=fps,
         clip_duration=args.clip_duration,
         num_samples=args.num_samples,
         num_neighbors=args.num_neighbors,
