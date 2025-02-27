@@ -6,28 +6,29 @@ import torch
 from clip import clip
 from PIL import Image
 import os
+from extract_frames import *
 
-def extract_video_frames(video_path, output_dir):
-    cap = cv2.VideoCapture(video_path)
-    frame_count = 0
+# def extract_video_frames(video_path, output_dir):
+#     cap = cv2.VideoCapture(video_path)
+#     frame_count = 0
     
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+#     while True:
+#         ret, frame = cap.read()
+#         if not ret:
+#             break
 
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # ✅ BGR → RGB 변환
-        frame_pil = Image.fromarray(frame_rgb)
+#         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # ✅ BGR → RGB 변환
+#         frame_pil = Image.fromarray(frame_rgb)
 
-        frame_path = os.path.join(output_dir, f"{video_basename}_frame_{frame_count:05d}.jpg")
-        frame_pil.save(frame_path)
+#         frame_path = os.path.join(output_dir, f"{video_basename}_frame_{frame_count:05d}.jpg")
+#         frame_pil.save(frame_path)
 
-        frame_count += 1
+#         frame_count += 1
         
-    cap.release()
-    print(f"✅ {video_path}: {frame_count}개의 프레임 저장 완료")
+#     cap.release()
+#     print(f"✅ {video_path}: {frame_count}개의 프레임 저장 완료")
 
-    return True
+#     return True
 
 def video_crop(video_frame, type):
     l = video_frame.shape[0]
@@ -170,7 +171,8 @@ if __name__ == '__main__':
 
             try:
                 # 동영상에서 프레임 추출 (shape: (num_frames, H, W, 3))
-                frames = extract_video_frames(video_path, frames_video_dir)
+                # frames = extract_video_frames(video_path, frames_video_dir)
+                frames = extract_frames(video_path, frames_video_dir)
             except Exception as e:
                 print("Error extracting frames from", video_path, e)
                 continue

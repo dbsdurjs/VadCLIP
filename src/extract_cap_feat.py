@@ -3,15 +3,10 @@ import torch
 from clip import clip
 import numpy as np
 from compare import average_features
+from clip_model_init import initialize_vlm_model_and_device
 
 if __name__ == '__main__':
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    # CLIP 모델 로드 (ViT-B/16 사용)
-    model, _ = clip.load("ViT-B/16", device)
-    for param in model.parameters():
-        param.requires_grad = False
-    model.eval()
+    model, _, device = initialize_vlm_model_and_device()
 
     root_text_dir = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames_with_10videos"
     output_dir = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature"
