@@ -72,6 +72,11 @@ class ImageTextCaptionCleaner:
         match = re.match(r'([A-Za-z]+)', video_name)
         if match:
             class_prefix = match.group(1)  # "Abuse"
+            if class_prefix != 'Normal':
+                return
+            else :
+                class_prefix  = 'Training_Normal_Videos_Anomaly'
+
         frames_json_path = captions_dirs / Path(class_prefix) / video_name / f'{video_name}.json'
         _, total_frames = cal_total_frames(frames_json_path)
 
@@ -172,7 +177,7 @@ class ImageTextCaptionCleaner:
                 class_prefix = match.group(1)  # "Abuse"
                 if class_prefix == 'Normal':
                     class_prefix = 'Training_Normal_Videos_Anomaly'
-
+                
             video_caption_path = self.captions_dir_template / class_prefix / ret_video_name / f"{ret_video_name}.json"
             with open(video_caption_path) as f:
                 video_captions = json.load(f)

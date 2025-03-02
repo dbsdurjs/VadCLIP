@@ -62,7 +62,7 @@ def process_video(
         batch_end_frame = min(batch_start_frame + (batch_size * frame_interval), total_frames)
         batch_frame_idxs = range(batch_start_frame, batch_end_frame, frame_interval)
 
-        text_list = extract_text_list(
+        text_list = extract_text_list( # 기존 총 N개 캡션 -> 16으로 나누어지는 인덱스의 M개의 캡션 N<=M
             video_captions, caption_to_frame_idxs, batch_frame_idxs, frame_interval
         )
 
