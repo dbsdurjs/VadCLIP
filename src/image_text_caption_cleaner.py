@@ -1,3 +1,7 @@
+# 논문에서는 모든 프레임에 대해서 캡션을 비교 후 가장 유사한 캡션으로 교체하는 작업 진행
+# 코드에서는 제한 범위 내에 가장 유사한 캡션을 뽑음
+# num_samples 수만큼 서브 프레임을 뽑아서 각각 1개의 유사 캡션을 뽑은 후 대표 프레임은 총 10개의 캡션을 가지게 됨
+# 실험 해보기(기존 vs 대표 프레임이 1개의 캡션을 가지기)
 import argparse
 import json
 import sys
@@ -21,7 +25,7 @@ captions_dirs = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UC
 
 def load_video(num_jobs=1, job_id=0):
     video_list = []
-    with open('./list/Anomaly_Train.txt', 'r', encoding='utf-8') as f:
+    with open('./list/Anomaly_Test.txt', 'r', encoding='utf-8') as f:   # Train or Test
         for line in f:
             relatvite_path = Path(line.strip().split('.')[0])
             if relatvite_path:
@@ -72,10 +76,10 @@ class ImageTextCaptionCleaner:
         match = re.match(r'([A-Za-z]+)', video_name)
         if match:
             class_prefix = match.group(1)  # "Abuse"
-            if class_prefix != 'Normal':
-                return
-            else :
-                class_prefix  = 'Training_Normal_Videos_Anomaly'
+            if class_prefix == 'Normal':
+                class_prefix  = 'Testing_Normal_Videos_Anomaly' # Train or Test
+            # else :
+            #     class_prefix  = 'Training_Normal_Videos_Anomaly'
 
         frames_json_path = captions_dirs / Path(class_prefix) / video_name / f'{video_name}.json'
         _, total_frames = cal_total_frames(frames_json_path)
@@ -111,11 +115,11 @@ class ImageTextCaptionCleaner:
         self._save_results(video_name, video_captions_retrieved)
 
     def _load_faiss_index(self, video_name):
-        index_file_path = Path(self.index_dir) / f"{video_name}.mp4.bin"
+        index_file_path = Path(self.index_dir) / f"{video_name}.bin"
         return faiss.read_index(str(index_file_path))
 
     def _load_file_names(self, video_name):
-        file_names_file_path = Path(self.index_dir) / f"{video_name}.mp4.json"
+        file_names_file_path = Path(self.index_dir) / f"{video_name}.json"
         with open(file_names_file_path) as f:
             return json.load(f)
 
@@ -176,7 +180,7 @@ class ImageTextCaptionCleaner:
             if match:
                 class_prefix = match.group(1)  # "Abuse"
                 if class_prefix == 'Normal':
-                    class_prefix = 'Training_Normal_Videos_Anomaly'
+                    class_prefix = 'Testing_Normal_Videos_Anomaly'  # Train or Test
                 
             video_caption_path = self.captions_dir_template / class_prefix / ret_video_name / f"{ret_video_name}.json"
             with open(video_caption_path) as f:

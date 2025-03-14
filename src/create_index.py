@@ -117,7 +117,7 @@ def load_video_captions(captions_dirs: List[str], video_names: str):
     if match:
         class_prefix = match.group(1)  # "Abuse"
         if class_prefix == 'Normal':
-            class_prefix = 'Training_Normal_Videos_Anomaly'
+            class_prefix = 'Testing_Normal_Videos_Anomaly'
 
     captions_dir = Path(captions_dirs)
 

@@ -1,5 +1,6 @@
 # 추출한 프레임과 기존 제공한 feature npy 파일의 크기 비교 코드
 import numpy as np
+import json
 
 def average_features(features, group_size=16):
     num_features = len(features)
@@ -14,11 +15,18 @@ def average_features(features, group_size=16):
 
 if __name__ == '__main__':
     # -------------------------------------------------------------------------------
-    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature/Assault/Assault010_x264/Assault010_x264.npy'
-    file2 = '/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/gt_ucf_10videos.npy'    # (129392,)
+    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCFClipFeatures/Training_Normal_Videos_Anomaly/Normal_Videos860_x264__0.npy'
+    # file2 = '/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/gt_ucf_10videos.npy'    # (129392,)
+    file3 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/captions/clean/Abuse004_x264.json' # caption cleaning 파일
     
     data1 = np.load(file1, allow_pickle=True)
-    data2 = np.load(file2, allow_pickle=True)
+    # data2 = np.load(file2, allow_pickle=True)
+    # with open(file3, 'r', encoding='utf-8') as f:
+    #     data = json.load(f)
+    
+    # # 대표 프레임의 개수 (최상위 키의 수)를 계산합니다.
+    # rep_frame_count = len(data)
+    # print(f"대표 프레임의 총 개수: {rep_frame_count}")
 
     print(data1.shape)
     # print(data2.shape)

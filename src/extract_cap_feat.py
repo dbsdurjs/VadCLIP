@@ -9,7 +9,7 @@ if __name__ == '__main__':
     model, _, device = initialize_vlm_model_and_device()
 
     root_text_dir = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames_with_10videos"
-    output_dir = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature"
+    output_dir = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature(clean)"
     os.makedirs(output_dir, exist_ok=True)
 
     group_size = 16
