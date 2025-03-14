@@ -75,8 +75,8 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
             for i in range(min(len(normal_loader), len(anomaly_loader))):
                 step = 0
-                normal_features, normal_label, normal_lengths, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
-                anomaly_features, anomaly_label, anomaly_lengths, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
+                normal_features, normal_label, normal_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
+                anomaly_features, anomaly_label, anomaly_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
 
                 visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # 128,256,1024
                 text_labels = list(normal_label) + list(anomaly_label)
