@@ -177,6 +177,6 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
-    # print(model)
+    
     train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
     writer.close()
