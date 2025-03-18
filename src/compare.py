@@ -15,7 +15,7 @@ def average_features(features, group_size=16):
 
 if __name__ == '__main__':
     # -------------------------------------------------------------------------------
-    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCFClipFeatures/Training_Normal_Videos_Anomaly/Normal_Videos860_x264__0.npy'
+    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCFClipFeatures/Testing_Normal_Videos_Anomaly/Normal_Videos_943_x264__0.npy'
     # file2 = '/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/gt_ucf_10videos.npy'    # (129392,)
     file3 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/captions/clean/Abuse004_x264.json' # caption cleaning 파일
     

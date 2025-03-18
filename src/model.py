@@ -215,7 +215,7 @@ class CLIPVAD(nn.Module):
 
     def forward(self, visual, padding_mask, text, lengths):
         visual_features = self.representation_feat(visual) # add idea7
-        visual_features = self.encode_video(visual_features, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
+        visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
         logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))
 
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)

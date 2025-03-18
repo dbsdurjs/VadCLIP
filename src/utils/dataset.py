@@ -55,9 +55,10 @@ class UCFDataset(data.Dataset):
             if clip_feature.shape[0] < clip_cap_feature.shape[0]:
                 lack_clip += 1
                 pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
-                last_frame = clip_feature[-1:].copy()
-                pad_array = np.repeat(last_frame, pad_frames, axis=0)
-                clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
+                clip_cap_feature = clip_cap_feature[:-pad_frames]   # gt와 np.repeat(ap1, 16)의 shape이 안 맞음(110988, 1109920), clip feat padding 대신 clip cap feat 줄임
+                # last_frame = clip_feature[-1:].copy()
+                # pad_array = np.repeat(last_frame, pad_frames, axis=0)
+                # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
 
             elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
                 lack_cap += 1

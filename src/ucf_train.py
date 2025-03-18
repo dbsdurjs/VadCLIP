@@ -75,8 +75,8 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
             for i in range(min(len(normal_loader), len(anomaly_loader))):
                 step = 0
-                normal_features, normal_label, normal_lengths = next(normal_iter)   # normal features : torch.Size([64, 256, 512])
-                anomaly_features, anomaly_label, anomaly_lengths = next(anomaly_iter)   # anomaly features : torch.Size([64, 256, 512])
+                normal_features, normal_label, normal_lengths, _, _, _  = next(normal_iter)   # normal features : torch.Size([64, 256, 512])
+                anomaly_features, anomaly_label, anomaly_lengths, _, _, _ = next(anomaly_iter)   # anomaly features : torch.Size([64, 256, 512])
 
                 visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device)
                 text_labels = list(normal_label) + list(anomaly_label)
@@ -126,7 +126,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
             writer.add_scalar('loss3/train', epoch_loss3, e)
             
             print(f'epoch: {e+1}, loss1: {(loss_total1 / (i+1)):.4f},| loss2: {(loss_total2 / (i+1)):.4f}, loss3: {loss3.item():.4f}')
-            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device)
+            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args.saved_video)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
             test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
