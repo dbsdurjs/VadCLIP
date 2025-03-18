@@ -35,8 +35,6 @@ class UCFDataset(data.Dataset):
     def __getitem__(self, index):
         clip_path = self.df.loc[index]['path']
         clip_feature = np.load(clip_path)
-        lack_clip = 0
-        lack_cap = 0
         base_file = os.path.basename(clip_path)
         video_path = os.path.dirname(clip_path)
         video_fps = 30
@@ -53,14 +51,13 @@ class UCFDataset(data.Dataset):
             clip_cap_feature = np.load(cap_path)
 
             if clip_feature.shape[0] < clip_cap_feature.shape[0]:
-                lack_clip += 1
                 pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
                 last_frame = clip_feature[-1:].copy()
                 pad_array = np.repeat(last_frame, pad_frames, axis=0)
                 clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
+                print('visual feat가 cap feature보다 작은 경우')                
 
             elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
-                lack_cap += 1
                 pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
                 last_frame = clip_cap_feature[-1:].copy()
                 pad_array = np.repeat(last_frame, pad_frames, axis=0)
