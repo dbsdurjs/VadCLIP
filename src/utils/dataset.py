@@ -55,7 +55,6 @@ class UCFDataset(data.Dataset):
                 last_frame = clip_feature[-1:].copy()
                 pad_array = np.repeat(last_frame, pad_frames, axis=0)
                 clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
-                print('visual feat가 cap feature보다 작은 경우')                
 
             elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
                 pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
@@ -63,16 +62,17 @@ class UCFDataset(data.Dataset):
                 pad_array = np.repeat(last_frame, pad_frames, axis=0)
                 clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
 
-            clip_feature = np.concatenate([clip_feature, clip_cap_feature], axis=1)
-
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
+            clip_cap_feature, clip_cap_length = tools.process_feat(clip_cap_feature, self.clip_dim)
         else:
             clip_feature, clip_length = tools.process_split(clip_feature, self.clip_dim)
+            clip_cap_feature, clip_cap_length = tools.process_split(clip_cap_feature, self.clip_dim)
 
         clip_feature = torch.tensor(clip_feature).float()
+        clip_cap_feature = torch.tensor(clip_cap_feature).float()
         clip_label = self.df.loc[index]['label']
-        return clip_feature, clip_label, clip_length, base_file, video_path, video_fps
+        return clip_feature, clip_label, clip_length, clip_cap_feature, clip_cap_length, base_file, video_path, video_fps
 
 class XDDataset(data.Dataset):
     def __init__(self, clip_dim: int, file_path: str, test_mode: bool, label_map: dict):

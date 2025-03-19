@@ -72,18 +72,22 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     with torch.no_grad():
         for i, item in enumerate(testdataloader):
             visual = item[0].squeeze(0)
-            length = item[2] # padding 256 사이즈에서 실제 프레임 수만큼 줄이기
             video_label = item[1] # add
-            video_basename = item[3] # add
-            video_path = item[4]  # 프레임 이미지들이 저장된 폴더 경로
-            video_fps = item[5]   # 동영상 fps
+            length = item[2] # padding 256 사이즈에서 실제 프레임 수만큼 줄이기
+            cap_features = item[3].squeeze(0)
+            cap_feat_lengths = item[4]
+            video_basename = item[5] # add
+            video_path = item[6]  # 프레임 이미지들이 저장된 폴더 경로
+            video_fps = item[7]   # 동영상 fps
 
             length = int(length)
             len_cur = length
             if len_cur < maxlen:
                 visual = visual.unsqueeze(0)
-
+                cap_features = cap_features.unsqueeze(0)
+                
             visual = visual.to(device)
+            cap_features = cap_features.to(device)
 
             lengths = torch.zeros(int(length / maxlen) + 1)
             for j in range(int(length / maxlen) + 1):
@@ -99,7 +103,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     lengths[j] = length
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2 = model(visual, padding_mask, prompt_text, lengths)
+            _, logits1, logits2 = model(visual, cap_features, padding_mask, prompt_text, lengths, cap_feat_lengths)
 
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2]) # (batch, 256, 1) -> (256, 1)
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2]) # (batch, 256, 14) -> (256, 14)

@@ -75,15 +75,18 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
             for i in range(min(len(normal_loader), len(anomaly_loader))):
                 step = 0
-                normal_features, normal_label, normal_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
-                anomaly_features, anomaly_label, anomaly_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
+                normal_features, normal_label, normal_lengths, normal_cap_features, normal_cap_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
+                anomaly_features, anomaly_label, anomaly_lengths, anomaly_cap_features, anomaly_cap_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
 
                 visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # 128,256,1024
+                cap_features = torch.cat([normal_cap_features, anomaly_cap_features], dim=0).to(device) # add idea6-3
+
                 text_labels = list(normal_label) + list(anomaly_label)
                 feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
+                cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
 
-                text_features, logits1, logits2 = model(visual_features, None, prompt_text, feat_lengths)
+                text_features, logits1, logits2 = model(visual_features, cap_features, None, prompt_text, feat_lengths, cap_feat_lengths) # edit idea6-3
                 
                 #loss1 - coarse grained
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device)
