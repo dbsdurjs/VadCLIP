@@ -38,7 +38,8 @@ class UCFDataset(data.Dataset):
         base_file = os.path.basename(clip_path)
         video_path = os.path.dirname(clip_path)
         video_fps = 30
-
+        alpha = 0.3
+        
         if self.using_caption:
             base_video_name = base_file.split('__')[0]
 
@@ -61,6 +62,8 @@ class UCFDataset(data.Dataset):
                 last_frame = clip_cap_feature[-1:].copy()
                 pad_array = np.repeat(last_frame, pad_frames, axis=0)
                 clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
+
+            clip_cap_feature = clip_feature + alpha * clip_cap_feature
 
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)

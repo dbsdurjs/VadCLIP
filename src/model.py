@@ -68,14 +68,28 @@ class Attentionfusion(nn.Module):   # add idea6-3
         self.residual_layer2 = nn.LayerNorm(fusion_dim)
         self.dropout2 = nn.Dropout()
 
+        self.linear_transform = nn.Linear(1024, 512) # add idea66-1
+
     def forward(self, caption_feat, visual_feat):
         caption_input, _ = self.self_attn(caption_feat, caption_feat, caption_feat)
         caption_output = self.residual_layer1(caption_input + caption_feat)
         caption_output = self.dropout1(caption_output)
 
-        fusion_feat, _ = self.cross_attn(caption_output, caption_input, visual_feat)
-        fusion_output = self.residual_layer2(fusion_feat + caption_output)
-        fusion_output = self.dropout2(fusion_output)
+        visual_input, _ = self.self_attn(visual_feat, visual_feat, visual_feat)
+        visual_output = self.residual_layer1(visual_input + visual_feat)
+        visual_output = self.dropout1(visual_output)
+
+        fusion_cap_feat, _ = self.cross_attn(caption_output, visual_output, visual_output)  # idea66-3
+        fusion_cap_output = self.residual_layer2(fusion_cap_feat + caption_output)
+        fusion_cap_output = self.dropout2(fusion_cap_output)
+
+        fusion_vis_feat, _ = self.cross_attn(visual_output, caption_output, caption_output)  # idea66-3
+        fusion_vis_output = self.residual_layer2(fusion_vis_feat + visual_output)
+        fusion_vis_output = self.dropout2(fusion_vis_output)
+
+        fusion_feat = torch.cat([fusion_cap_output, fusion_vis_output], dim=2) # add idea66-1
+
+        fusion_output = self.linear_transform(fusion_feat)
 
         return fusion_output
     
