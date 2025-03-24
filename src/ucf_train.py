@@ -74,7 +74,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         with tqdm(total=min(len(normal_loader), len(anomaly_loader)), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
 
             for i in range(min(len(normal_loader), len(anomaly_loader))):
-                step = 0
                 normal_features, normal_label, normal_lengths = next(normal_iter)   # normal features : torch.Size([64, 256, 512])
                 anomaly_features, anomaly_label, anomaly_lengths = next(anomaly_iter)   # anomaly features : torch.Size([64, 256, 512])
 
@@ -107,8 +106,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                
-                step += i * normal_loader.batch_size * 2
                 
                 # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(

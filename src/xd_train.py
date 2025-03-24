@@ -11,6 +11,10 @@ from xd_test import test
 from utils.dataset import XDDataset
 from utils.tools import get_prompt_text, get_batch_label
 import xd_option
+from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
+
+writer = SummaryWriter()
 
 def CLASM(logits, labels, lengths, device):
     instance_logits = torch.zeros(0).to(device)
@@ -64,48 +68,77 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
         model.train()
         loss_total1 = 0
         loss_total2 = 0
-        for i, item in enumerate(train_loader):
-            step = 0
-            visual_feat, text_labels, feat_lengths = item
-            visual_feat = visual_feat.to(device)
-            feat_lengths = feat_lengths.to(device)
-            text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
+        loss_total3 = 0
 
-            text_features, logits1, logits2 = model(visual_feat, None, prompt_text, feat_lengths) 
+        with tqdm(total=len(train_loader), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
+            
+            for i, item in enumerate(train_loader):
+                step = 0
+                visual_feat, text_labels, feat_lengths = item
+                visual_feat = visual_feat.to(device)
+                feat_lengths = feat_lengths.to(device)
+                text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
 
-            loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
-            loss_total1 += loss1.item()
+                text_features, logits1, logits2 = model(visual_feat, None, prompt_text, feat_lengths) 
 
-            loss2 = CLASM(logits2, text_labels, feat_lengths, device)
-            loss_total2 += loss2.item()
+                loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
+                loss_total1 += loss1.item()
 
-            loss3 = torch.zeros(1).to(device)
-            text_feature_normal = text_features[0] / text_features[0].norm(dim=-1, keepdim=True)
-            for j in range(1, text_features.shape[0]):
-                text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
-                loss3 += torch.abs(text_feature_normal @ text_feature_abr)
-            loss3 = loss3 / 6
+                loss2 = CLASM(logits2, text_labels, feat_lengths, device)
+                loss_total2 += loss2.item()
 
-            loss = loss1 + loss2 + loss3 * 1e-4
+                loss3 = torch.zeros(1).to(device)
+                text_feature_normal = text_features[0] / text_features[0].norm(dim=-1, keepdim=True)
+                for j in range(1, text_features.shape[0]):
+                    text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
+                    loss3 += torch.abs(text_feature_normal @ text_feature_abr)
+                loss3 = loss3 / 6
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            step += i * train_loader.batch_size
-            if step % 4800 == 0 and step != 0:
-                print('epoch: ', e+1, '| step: ', step, '| loss1: ', loss_total1 / (i+1), '| loss2: ', loss_total2 / (i+1), '| loss3: ', loss3.item())
-                
-        scheduler.step()
-        AUC, AP, mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device)
+                loss = loss1 + loss2 + loss3 * 1e-4
+                loss_total3 += loss3.item()
 
-        if AP > ap_best:
-            ap_best = AP 
-            checkpoint = {
-                'epoch': e,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'ap': ap_best}
-            torch.save(checkpoint, args.checkpoint_path)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                step += i * train_loader.batch_size
+
+                # tqdm 업데이트 및 정보 추가
+                pbar.set_postfix(
+                    loss1=f"{(loss_total1 / (i+1)):.4f}",
+                    loss2=f"{(loss_total2 / (i+1)):.4f}",
+                    loss3=f"{loss3.item():.4f}",
+                )
+                pbar.update(1)
+            # 에포크 손실값 평균 계산 후 TensorBoard에 기록
+            epoch_loss1 = loss_total1 / (i+1)
+            epoch_loss2 = loss_total2 / (i+1)
+            epoch_loss3 = loss_total3 / (i+1)
+            writer.add_scalar('loss1/train', epoch_loss1, e)
+            writer.add_scalar('loss2/train', epoch_loss2, e)
+            writer.add_scalar('loss3/train', epoch_loss3, e)
+
+            print(f'epoch: {e+1}, loss1: {(loss_total1 / (i+1)):.4f},| loss2: {(loss_total2 / (i+1)):.4f}, loss3: {loss3.item():.4f}')
+                    
+            AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device)
+            
+            test_acc1 = {'AUC1':AUC, 'AP1':AP}
+            test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
+            
+            writer.add_scalars('test_acc1/test_accuracy', test_acc1, e)
+            writer.add_scalars('test_acc2/test_accuracy', test_acc2, e)
+            writer.add_scalar('average mAP/test_accuracy', average_mAP, e)
+            AP = AUC
+
+            if AP > ap_best:
+                ap_best = AP 
+                checkpoint = {
+                    'epoch': e,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'ap': ap_best}
+                torch.save(checkpoint, args.checkpoint_path)
+
+            scheduler.step()
 
         checkpoint = torch.load(args.checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
