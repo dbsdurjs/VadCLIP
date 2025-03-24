@@ -76,25 +76,65 @@ class UCFDataset(data.Dataset):
         clip_feature = torch.tensor(clip_feature).float()
         clip_cap_feature = torch.tensor(clip_cap_feature).float()
         clip_label = self.df.loc[index]['label']
+
         return clip_feature, clip_label, clip_length, clip_cap_feature, clip_cap_length, base_file, video_path, video_fps
 
 class XDDataset(data.Dataset):
-    def __init__(self, clip_dim: int, file_path: str, test_mode: bool, label_map: dict):
+    def __init__(self, clip_dim: int, file_path: str, test_mode: bool, label_map: dict, using_caption: bool = False):
         self.df = pd.read_csv(file_path)
         self.clip_dim = clip_dim
         self.test_mode = test_mode
         self.label_map = label_map
+        self.using_caption = using_caption
+        print(f'captioning 사용여부 : {self.using_caption}')
         
     def __len__(self):
         return self.df.shape[0]
 
     def __getitem__(self, index):
-        clip_feature = np.load(self.df.loc[index]['path'])
+        clip_path = self.df.loc[index]['path']
+        clip_feature = np.load(clip_path)
+        base_file = os.path.basename(clip_path)
+        video_path = os.path.dirname(clip_path)
+        video_fps = 30
+        alpha = 0.3
+        
+        if self.using_caption:
+            base_video_name = base_file.split('__')[0]
+
+            matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
+                                    self.df_cap['path'].str.endswith(base_video_name + ".npy")]
+            if matching_rows.empty:
+                raise KeyError(f"No matching clip_cap_feature for video {base_video_name}")
+            
+            cap_path = matching_rows.iloc[0]['path']
+            clip_cap_feature = np.load(cap_path)
+
+            if clip_feature.shape[0] < clip_cap_feature.shape[0]:
+                pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
+                clip_cap_feature = clip_cap_feature[:-pad_frames] # add idea66-5
+                # last_frame = clip_feature[-1:].copy()
+                # pad_array = np.repeat(last_frame, pad_frames, axis=0)
+                # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
+
+            elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
+                pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
+                last_frame = clip_cap_feature[-1:].copy()
+                pad_array = np.repeat(last_frame, pad_frames, axis=0)
+                clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
+
+            clip_cap_feature = clip_feature + alpha * clip_cap_feature
+
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
+            clip_cap_feature, clip_cap_length = tools.process_feat(clip_cap_feature, self.clip_dim)
+
         else:
             clip_feature, clip_length = tools.process_split(clip_feature, self.clip_dim)
-
-        clip_feature = torch.tensor(clip_feature)
+            clip_cap_feature, clip_cap_length = tools.process_split(clip_cap_feature, self.clip_dim)
+        
+        clip_feature = torch.tensor(clip_feature).float()
+        clip_cap_feature = torch.tensor(clip_cap_feature).float()
         clip_label = self.df.loc[index]['label']
-        return clip_feature, clip_label, clip_length
+
+        return clip_feature, clip_label, clip_length, clip_cap_feature, clip_cap_length, base_file, video_path, video_fps
