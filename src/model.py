@@ -143,23 +143,15 @@ class CLIPVAD(nn.Module):
             ("c_proj", nn.Linear(visual_width * 4, visual_width))
         ]))
         self.classifier = nn.Linear(visual_width, 1)
-        self.proj2 = nn.Sequential(
-            nn.Linear(1024, 768),
-            nn.LeakyReLU(),
-            nn.Linear(768, 512)
-        )
-        self.representation_feat = nn.Sequential(   # add idea6-2
-            nn.Linear(512, 256),
-            nn.ReLU(),
-            nn.Linear(256,512),
-        )
+
         self.clipmodel, _ = clip.load("ViT-B/16", device)
         for clip_param in self.clipmodel.parameters():
             clip_param.requires_grad = False
 
         self.frame_position_embeddings = nn.Embedding(visual_length, visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
-        
+        self.caption_embeddings = nn.Embedding(visual_length, visual_width) # add idea66-6
+
         self.fusionattn = Attentionfusion(fusion_dim=512, num_heads=8)
         self.initialize_parameters()
 
@@ -249,8 +241,18 @@ class CLIPVAD(nn.Module):
 
         return text_features
 
+    def task_caption(self, caption):
+        caption = caption.to(torch.float) # (batch size, 256, 512)
+        position_ids = torch.arange(self.visual_length, device=self.device)
+        position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size,256)
+        frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256, 512)
+        caption = caption + frame_position_embeddings
+
+        return caption
+    
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
-        fusion_feat = self.fusionattn(captioning, visual) # add idea6-3
+        caption_feat = self.task_caption(captioning)
+        fusion_feat = self.fusionattn(caption_feat, visual) # add idea6-3
         visual_features = self.encode_video(fusion_feat, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
 
         logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))

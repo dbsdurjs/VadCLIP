@@ -53,9 +53,10 @@ class UCFDataset(data.Dataset):
 
             if clip_feature.shape[0] < clip_cap_feature.shape[0]:
                 pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
-                last_frame = clip_feature[-1:].copy()
-                pad_array = np.repeat(last_frame, pad_frames, axis=0)
-                clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
+                clip_cap_feature = clip_cap_feature[:-pad_frames] # add idea66-5
+                # last_frame = clip_feature[-1:].copy()
+                # pad_array = np.repeat(last_frame, pad_frames, axis=0)
+                # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
 
             elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
                 pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]

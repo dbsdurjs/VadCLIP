@@ -13,13 +13,13 @@ parser.add_argument('--prompt-prefix', default=10, type=int)
 parser.add_argument('--prompt-postfix', default=10, type=int)
 parser.add_argument('--classes-num', default=14, type=int)
 
-parser.add_argument('--max-epoch', default=10, type=int)
+parser.add_argument('--max-epoch', default=20, type=int)
 parser.add_argument('--model-path', default='../vadclip_pth/model/model_ucf_caption.pth')
 parser.add_argument('--use-checkpoint', default=False, type=bool)
 parser.add_argument('--checkpoint-path', default='../vadclip_pth/model/checkpoint_caption.pth')
 parser.add_argument('--batch-size', default=64, type=int)
 
-parser.add_argument('--using-caption', action='store_true', default=True)
+parser.add_argument('--using-caption', action='store_true', default=False)
 parser.add_argument('--saved-video', action='store_true', default=False)
 
 parser.add_argument('--train-list', default='list/ucf_CLIP_rgb.csv')
@@ -32,6 +32,6 @@ parser.add_argument('--gt-path', default='list/gt_ucf.npy')
 parser.add_argument('--gt-segment-path', default='list/gt_segment_ucf.npy')
 parser.add_argument('--gt-label-path', default='list/gt_label_ucf.npy')
 
-parser.add_argument('--lr', default=2e-5)
+parser.add_argument('--lr', default=1e-5)
 parser.add_argument('--scheduler-rate', default=0.1)
 parser.add_argument('--scheduler-milestones', default=[4, 8])
