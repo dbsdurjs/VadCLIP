@@ -73,13 +73,15 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
         with tqdm(total=len(train_loader), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
             
             for i, item in enumerate(train_loader):
-                step = 0
-                visual_feat, text_labels, feat_lengths = item
+                visual_feat, text_labels, feat_lengths, cap_feature, cap_length, _, _, _  = item
                 visual_feat = visual_feat.to(device)
+                cap_feature = cap_feature.to(device)
                 feat_lengths = feat_lengths.to(device)
+                cap_length = cap_length.to(device)
+
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
 
-                text_features, logits1, logits2 = model(visual_feat, None, prompt_text, feat_lengths) 
+                text_features, logits1, logits2 = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -100,7 +102,6 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                step += i * train_loader.batch_size
 
                 # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
@@ -160,10 +161,10 @@ if __name__ == '__main__':
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
 
-    train_dataset = XDDataset(args.visual_length, args.train_list, False, label_map, using_caption=args.using_caption)
+    train_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, using_caption=args.using_caption)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
 
-    test_dataset = XDDataset(args.visual_length, args.test_list, True, label_map, using_caption=args.using_caption)
+    test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)

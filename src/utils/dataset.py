@@ -80,11 +80,13 @@ class UCFDataset(data.Dataset):
         return clip_feature, clip_label, clip_length, clip_cap_feature, clip_cap_length, base_file, video_path, video_fps
 
 class XDDataset(data.Dataset):
-    def __init__(self, clip_dim: int, file_path: str, test_mode: bool, label_map: dict, using_caption: bool = False):
+    def __init__(self, clip_dim: int, file_path: str, file_path_cap: str, test_mode: bool, label_map: dict, using_caption: bool = False):
         self.df = pd.read_csv(file_path)
+        self.df_cap = pd.read_csv(file_path_cap)
         self.clip_dim = clip_dim
         self.test_mode = test_mode
         self.label_map = label_map
+
         self.using_caption = using_caption
         print(f'captioning 사용여부 : {self.using_caption}')
         
@@ -100,28 +102,28 @@ class XDDataset(data.Dataset):
         alpha = 0.3
         
         if self.using_caption:
-            base_video_name = base_file.split('__')[0]
+            base_video_name = base_file.rsplit('__', 1)[0]
 
             matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
                                     self.df_cap['path'].str.endswith(base_video_name + ".npy")]
             if matching_rows.empty:
-                raise KeyError(f"No matching clip_cap_feature for video {base_video_name}")
+                raise KeyError(f"No matching clip_cap_feature for video {base_file}")
             
             cap_path = matching_rows.iloc[0]['path']
             clip_cap_feature = np.load(cap_path)
 
-            if clip_feature.shape[0] < clip_cap_feature.shape[0]:
-                pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
-                clip_cap_feature = clip_cap_feature[:-pad_frames] # add idea66-5
-                # last_frame = clip_feature[-1:].copy()
-                # pad_array = np.repeat(last_frame, pad_frames, axis=0)
-                # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
+            # if clip_feature.shape[0] < clip_cap_feature.shape[0]:
+            #     pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
+            #     clip_cap_feature = clip_cap_feature[:-pad_frames] # add idea66-5
+            #     # last_frame = clip_feature[-1:].copy()
+            #     # pad_array = np.repeat(last_frame, pad_frames, axis=0)
+            #     # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
 
-            elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
-                pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
-                last_frame = clip_cap_feature[-1:].copy()
-                pad_array = np.repeat(last_frame, pad_frames, axis=0)
-                clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
+            # elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
+            #     pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
+            #     last_frame = clip_cap_feature[-1:].copy()
+            #     pad_array = np.repeat(last_frame, pad_frames, axis=0)
+            #     clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
 
             clip_cap_feature = clip_feature + alpha * clip_cap_feature
 

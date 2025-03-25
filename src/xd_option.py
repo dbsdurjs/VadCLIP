@@ -25,8 +25,8 @@ parser.add_argument('--saved-video', action='store_true', default=False)
 parser.add_argument('--train-list', default='list/xd_CLIP_rgb.csv')
 parser.add_argument('--test-list', default='list/xd_CLIP_rgbtest.csv')
 
-parser.add_argument('--train-cap-list', default='list/xd_CLIP_rgb_caption(clean).csv')
-parser.add_argument('--test-cap-list', default='list/xd_CLIP_rgbtest_caption(clean).csv')
+parser.add_argument('--train-cap-list', default='list/xd_CLIP_rgb_caption.csv')
+parser.add_argument('--test-cap-list', default='list/xd_CLIP_rgbtest_caption.csv')
 
 parser.add_argument('--gt-path', default='list/gt.npy')
 parser.add_argument('--gt-segment-path', default='list/gt_segment.npy')

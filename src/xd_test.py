@@ -17,18 +17,30 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     model.eval()
 
     element_logits2_stack = []
+    video_labels_list = []
+    video_names_list = []
+    video_paths_list = []  # 프레임 이미지가 저장된 폴더 경로
+    video_fps_list = []    # 동영상 fps (예: 30)
 
     with torch.no_grad():
         for i, item in enumerate(testdataloader):
             visual = item[0].squeeze(0)
-            length = item[2]
+            video_label = item[1] # add
+            length = item[2] # padding 256 사이즈에서 실제 프레임 수만큼 줄이기
+            cap_features = item[3].squeeze(0)
+            cap_feat_lengths = item[4]
+            video_basename = item[5] # add
+            video_path = item[6]  # 프레임 이미지들이 저장된 폴더 경로
+            video_fps = item[7]   # 동영상 fps
 
             length = int(length)
             len_cur = length
             if len_cur < maxlen:
                 visual = visual.unsqueeze(0)
+                cap_features = cap_features.unsqueeze(0)
 
             visual = visual.to(device)
+            cap_features = cap_features.to(device)
 
             lengths = torch.zeros(int(length / maxlen) + 1)
             for j in range(int(length / maxlen) + 1):
@@ -44,11 +56,16 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     lengths[j] = length
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2 = model(visual, padding_mask, prompt_text, lengths)
+            _, logits1, logits2 = model(visual, cap_features, padding_mask, prompt_text, lengths, cap_feat_lengths)
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2])
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2])
             prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1))
             prob1 = torch.sigmoid(logits1[0:len_cur].squeeze(-1))
+
+            video_labels_list.append(video_label)
+            video_names_list.append(video_basename)
+            video_paths_list.append(video_path)
+            video_fps_list.append(video_fps)
 
             if i == 0:
                 ap1 = prob1
@@ -91,7 +108,7 @@ if __name__ == '__main__':
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
 
-    test_dataset = XDDataset(args.visual_length, args.test_list, True, label_map, using_caption=args.using_caption)
+    test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     prompt_text = get_prompt_text(label_map)
