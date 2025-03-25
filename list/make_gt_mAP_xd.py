@@ -40,12 +40,11 @@ for idx in range(lists.shape[0]):
             if name in gt_line:
                 gt_content = gt_line.strip('\n').split()
                 for j in range(1, len(gt_content), 3):
-                    print(gt_content, j)
                     segment.append([gt_content[j + 1], gt_content[j + 2]])
                     label.append(gt_content[j])
                 break
     gt_segment.append(segment)
     gt_label.append(label)
-    
-np.save('list/gt_label.npy', gt_label)
-np.save('list/gt_segment.npy', gt_segment)
+print(len(gt_segment))
+# np.save('list/gt_label.npy', gt_label)
+# np.save('list/gt_segment.npy', gt_segment)
