@@ -51,18 +51,18 @@ class UCFDataset(data.Dataset):
             cap_path = matching_rows.iloc[0]['path']
             clip_cap_feature = np.load(cap_path)
 
-            if clip_feature.shape[0] < clip_cap_feature.shape[0]:
-                pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
-                clip_cap_feature = clip_cap_feature[:-pad_frames] # add idea66-5
-                # last_frame = clip_feature[-1:].copy()
-                # pad_array = np.repeat(last_frame, pad_frames, axis=0)
-                # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
+            # if clip_feature.shape[0] < clip_cap_feature.shape[0]:
+            #     pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
+            #     clip_cap_feature = clip_cap_feature[:-pad_frames] # add idea66-5
+            #     # last_frame = clip_feature[-1:].copy()
+            #     # pad_array = np.repeat(last_frame, pad_frames, axis=0)
+            #     # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
 
-            elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
-                pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
-                last_frame = clip_cap_feature[-1:].copy()
-                pad_array = np.repeat(last_frame, pad_frames, axis=0)
-                clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
+            # elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
+            #     pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
+            #     last_frame = clip_cap_feature[-1:].copy()
+            #     pad_array = np.repeat(last_frame, pad_frames, axis=0)
+            #     clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
 
             clip_cap_feature = clip_feature + alpha * clip_cap_feature
 

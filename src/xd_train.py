@@ -14,7 +14,7 @@ import xd_option
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-writer = SummaryWriter()
+writer = SummaryWriter(log_dir='../runs_xd')
 
 def CLASM(logits, labels, lengths, device):
     instance_logits = torch.zeros(0).to(device)
@@ -119,8 +119,7 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
             writer.add_scalar('loss3/train', epoch_loss3, e)
 
             print(f'epoch: {e+1}, loss1: {(loss_total1 / (i+1)):.4f},| loss2: {(loss_total2 / (i+1)):.4f}, loss3: {loss3.item():.4f}')
-                    
-            AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device)
+            AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
             test_acc2 = {'AUC2':AUC2, 'AP2':AP2}

@@ -10,8 +10,9 @@ from utils.dataset import XDDataset
 from utils.tools import get_batch_mask, get_prompt_text
 from utils.xd_detectionMAP import getDetectionMAP as dmAP
 import xd_option
+from save_result import *
 
-def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device):
+def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, args):
     
     model.to(device)
     model.eval()
@@ -88,6 +89,9 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     ROC2 = roc_auc_score(gt, np.repeat(ap2, 16))
     AP2 = average_precision_score(gt, np.repeat(ap2, 16))
 
+    if args.saved_video:
+        saved_test_video(args.gt_txt, video_names_list, element_logits2_stack, args.frame_base_folder, video_fps_list, prompt_text)
+
     print(f"AUC1: {ROC1:.4f}, AP1: {AP1:.4f}")
     print(f"AUC2: {ROC2:.4f}, AP2: {AP2:.4f}")
 
@@ -98,6 +102,9 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
         averageMAP += dmap[i]
     averageMAP = averageMAP/(i+1)
     print('average MAP: {:.2f}'.format(averageMAP))
+
+    if args.save_test_result:
+        save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, filename="../output/result_xd.txt")
 
     return ROC1, AP1, ROC2, AP2, averageMAP
 
@@ -120,4 +127,4 @@ if __name__ == '__main__':
     model_param = torch.load(args.model_path)
     model.load_state_dict(model_param)
 
-    test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device)
+    test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)

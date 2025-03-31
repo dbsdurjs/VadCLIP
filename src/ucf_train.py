@@ -14,7 +14,7 @@ import ucf_option
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
-writer = SummaryWriter()
+writer = SummaryWriter(log_dir='../runs_ucf')
 
 def CLASM(logits, labels, lengths, device): # fine grained
     instance_logits = torch.zeros(0).to(device)
@@ -48,7 +48,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)   # anomaly gt 구간
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)   # 클래스 gt(normal : A, Abuse, Arrest..)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)#, weight_decay=1e-04)
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
     ap_best = 0
@@ -74,7 +74,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         with tqdm(total=min(len(normal_loader), len(anomaly_loader)), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
 
             for i in range(min(len(normal_loader), len(anomaly_loader))):
-                step = 0
                 normal_features, normal_label, normal_lengths, normal_cap_features, normal_cap_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
                 anomaly_features, anomaly_label, anomaly_lengths, anomaly_cap_features, anomaly_cap_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
 
@@ -110,9 +109,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                
-                step += i * normal_loader.batch_size * 2
-                
+                              
                 # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
@@ -129,7 +126,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
             writer.add_scalar('loss3/train', epoch_loss3, e)
             
             print(f'epoch: {e+1}, loss1: {(loss_total1 / (i+1)):.4f},| loss2: {(loss_total2 / (i+1)):.4f}, loss3: {loss3.item():.4f}')
-            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args.saved_video)
+            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
             test_acc2 = {'AUC2':AUC2, 'AP2':AP2}

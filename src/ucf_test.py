@@ -14,50 +14,17 @@ import os
 import logging
 from vis import *
 import re
+from save_result import *
 
 # 로그 파일 설정
 logging.basicConfig(
-    filename='test_results.log',  # 기록할 로그 파일 이름
+    filename='../output/test_results.log',  # 기록할 로그 파일 이름
     level=logging.INFO,           # INFO 레벨 이상의 로그를 기록
     format='%(asctime)s %(levelname)s: %(message)s',  # 로그 메시지 포맷
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-frame_base_folder = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames/"
-gt_txt = './list/Temporal_Anomaly_Annotation.txt'
-
-def find_video_folder(vname):
-    for root, dirs, files in os.walk(frame_base_folder):
-        for d in dirs:
-            if d == vname:
-                return os.path.join(root, d)
-    return None
-
-def read_annotation_intervals(annotation_file):
-    """
-    annotation_file: 각 줄이 "videoName  Class  start1  end1  start2  end2 ..." 형식인 텍스트 파일 경로.
-    반환: { video_name: [(start1, end1), (start2, end2), ...] }
-           -1인 값은 무시합니다.
-    """
-    annotations = {}
-    with open(annotation_file, 'r') as f:
-        for line in f:
-            tokens = line.strip().split()
-            if len(tokens) < 4:
-                continue  # 최소한 videoName, Class, start, end가 있어야 함.
-            video_name = tokens[0]  
-            intervals = []
-            # 두 번째 토큰은 클래스 정보이므로, 2번 인덱스부터 시작
-            for i in range(2, len(tokens), 2):
-                start = int(tokens[i])
-                end = int(tokens[i+1]) if i+1 < len(tokens) else -1
-                if start != -1 and end != -1:
-                    intervals.append((start, end))
-            annotations[video_name] = intervals
-    return annotations
-
-exclude_list = ['Abuse', 'Arrest', 'Arson', 'Assault', 'Burglary', 'Explosion', 'Fighting', 'RoadAccidents', 'Robbery']
-def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, saved_video):
+def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, args):
     
     model.to(device)
     model.eval()
@@ -148,34 +115,8 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     ROC2 = roc_auc_score(gt, np.repeat(ap2, 16))    # softmax 방식(multi-class classification)
     AP2 = average_precision_score(gt, np.repeat(ap2, 16))   # softmax 방식(multi-class classification)
     
-    if saved_video:
-        anno = read_annotation_intervals(gt_txt)
-        for idx in range(len(video_names_list)):
-            vname = video_names_list[idx][0].split('__')[0] if isinstance(video_names_list[idx], tuple) else video_names_list[idx]
-            
-            # match = re.match(r'([A-Za-z]+)', vname)   # 미리 했던 작업이 있어서 제외하고 나머지 작업 코드
-            # class_prefix = match.group(1) if match else vname
-
-            # if class_prefix in exclude_list:
-            #     continue
-            frame_path = find_video_folder(vname)
-
-            avg_class_scores = np.mean(element_logits2_stack[idx], axis=0)
-            best_class_idx = np.argmax(avg_class_scores)
-            vscores = element_logits2_stack[idx][:, best_class_idx]  # shape: (프레임 수,)
-
-            vpath = os.path.join(frame_base_folder, frame_path)
-            vfps = video_fps_list[idx][0]        # 동영상 fps
-            
-            # 저장 경로 지정 (예: vname.mp4 파일)
-            save_path = os.path.join(vpath, f"{vname}_visualization.mp4")
-            normal_label = prompt_text[0]  # 예시
-            imagefile_template = vname + "_frame_{:05d}.jpg" 
-            
-            anno_for_video = anno.get(vname, [])
-            visualize_video(vname, anno_for_video, vscores, vpath, vfps, save_path, normal_label, imagefile_template, None)
-            logging.info(f"Visualization video saved: {save_path}")
-            print(f"Visualization video saved: {save_path}")
+    if args.saved_video:
+        saved_test_video(args.gt_txt, video_names_list, element_logits2_stack, args.frame_base_folder, video_fps_list, prompt_text)
 
     # gt는 동영상 프레임에 대한 n/a를 나타냄 [0,0,0,1,1,...]
     # ROC1 : C-branch에서 직접 anomaly confidence를 구하는 법
@@ -190,6 +131,9 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
         averageMAP += dmap[i]
     averageMAP = averageMAP/(i+1)
     print('average MAP: {:.2f}'.format(averageMAP))
+
+    if args.save_test_result:
+        save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, filename="../output/result_ucf.txt")
 
     return ROC1, AP1, ROC2, AP2, averageMAP
 
@@ -212,4 +156,4 @@ if __name__ == '__main__':
     model_param = torch.load(args.model_path)
     model.load_state_dict(model_param)
 
-    test(model, testdataloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args.saved_video)
+    test(model, testdataloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
