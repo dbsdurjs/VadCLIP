@@ -51,20 +51,7 @@ class UCFDataset(data.Dataset):
             cap_path = matching_rows.iloc[0]['path']
             clip_cap_feature = np.load(cap_path)
 
-            # if clip_feature.shape[0] < clip_cap_feature.shape[0]:
-            #     pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
-            #     clip_cap_feature = clip_cap_feature[:-pad_frames] # add idea66-5
-            #     # last_frame = clip_feature[-1:].copy()
-            #     # pad_array = np.repeat(last_frame, pad_frames, axis=0)
-            #     # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
-
-            # elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
-            #     pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
-            #     last_frame = clip_cap_feature[-1:].copy()
-            #     pad_array = np.repeat(last_frame, pad_frames, axis=0)
-            #     clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
-
-            clip_cap_feature = clip_feature + alpha * clip_cap_feature
+            # clip_cap_feature = clip_feature + alpha * clip_cap_feature
 
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
@@ -112,20 +99,7 @@ class XDDataset(data.Dataset):
             cap_path = matching_rows.iloc[0]['path']
             clip_cap_feature = np.load(cap_path)
 
-            # if clip_feature.shape[0] < clip_cap_feature.shape[0]:
-            #     pad_frames = clip_cap_feature.shape[0] - clip_feature.shape[0]
-            #     clip_cap_feature = clip_cap_feature[:-pad_frames] # add idea66-5
-            #     # last_frame = clip_feature[-1:].copy()
-            #     # pad_array = np.repeat(last_frame, pad_frames, axis=0)
-            #     # clip_feature = np.concatenate([clip_feature, pad_array], axis=0)
-
-            # elif clip_cap_feature.shape[0] < clip_feature.shape[0]:
-            #     pad_frames = clip_feature.shape[0] - clip_cap_feature.shape[0]
-            #     last_frame = clip_cap_feature[-1:].copy()
-            #     pad_array = np.repeat(last_frame, pad_frames, axis=0)
-            #     clip_cap_feature = np.concatenate([clip_cap_feature, pad_array], axis=0)
-
-            clip_cap_feature = clip_feature + alpha * clip_cap_feature
+            # clip_cap_feature = clip_feature + alpha * clip_cap_feature
 
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)

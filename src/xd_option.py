@@ -13,7 +13,7 @@ parser.add_argument('--prompt-prefix', default=10, type=int)
 parser.add_argument('--prompt-postfix', default=10, type=int)
 parser.add_argument('--classes-num', default=7, type=int)
 
-parser.add_argument('--max-epoch', default=20, type=int)
+parser.add_argument('--max-epoch', default=15, type=int)
 parser.add_argument('--model-path', default='model/model_xd_caption.pth')
 parser.add_argument('--use-checkpoint', default=False, type=bool)
 parser.add_argument('--checkpoint-path', default='model/checkpoint_caption.pth')

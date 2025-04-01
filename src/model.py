@@ -93,14 +93,50 @@ class Attentionfusion(nn.Module):   # add idea6-3
 
         return fusion_output
     
+class Attentionfusion2(nn.Module):   # add idea6-3
+    def __init__(self, fusion_dim, num_heads):
+        super(Attentionfusion2, self).__init__()
+
+        self.mlp_layer = nn.Linear(1024, 512) # add 66-1
+        self.self_attn = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
+        self.residual_layer1 = nn.LayerNorm(fusion_dim)
+        self.dropout1 = nn.Dropout()
+
+        self.cross_attn = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
+        self.residual_layer2 = nn.LayerNorm(fusion_dim)
+        self.dropout2 = nn.Dropout()
+
+        self.linear_transform = nn.Linear(1024, 512) # add idea66-1
+
+    def forward(self, concat_feat, caption_feat, visual_feat):
+        concat_features = self.mlp_layer(concat_feat)
+
+        attn_concat_features, _ = self.self_attn(concat_features, concat_features, concat_features)
+        attn_concat_features = self.residual_layer1(concat_features + attn_concat_features)
+        attn_concat_features = self.dropout1(attn_concat_features)
+
+        fusion_cap_feat, _ = self.cross_attn(attn_concat_features, caption_feat, caption_feat)
+        fusion_cap_output = self.residual_layer2(fusion_cap_feat + caption_feat)
+        fusion_cap_output = self.dropout2(fusion_cap_output)
+
+        fusion_vis_feat, _ = self.cross_attn(attn_concat_features, visual_feat, visual_feat)
+        fusion_vis_output = self.residual_layer2(fusion_vis_feat + visual_feat)
+        fusion_vis_output = self.dropout2(fusion_vis_output)
+
+        fusion_feat = torch.cat([fusion_cap_output, fusion_vis_output], dim=2)
+
+        fusion_output = self.linear_transform(fusion_feat)
+
+        return fusion_output
+    
 class CLIPVAD(nn.Module):
     def __init__(self,
                  num_class: int,
                  embed_dim: int,
                  visual_length: int,
                  visual_width: int,
-                 visual_head: int,
-                 visual_layers: int,
+                 visual_head: int, # 1
+                 visual_layers: int, # 1
                  attn_window: int,
                  prompt_prefix: int,
                  prompt_postfix: int,
@@ -151,8 +187,9 @@ class CLIPVAD(nn.Module):
         self.frame_position_embeddings = nn.Embedding(visual_length, visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
         self.caption_embeddings = nn.Embedding(visual_length, visual_width) # add idea66-6
-
+        self.caption_mlp = nn.Linear(1024, 512)
         self.fusionattn = Attentionfusion(fusion_dim=512, num_heads=8)
+        self.fusionattn2 = Attentionfusion2(fusion_dim=512, num_heads=8)
         self.initialize_parameters()
 
     def initialize_parameters(self):
@@ -252,25 +289,26 @@ class CLIPVAD(nn.Module):
     
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
         caption_feat = self.task_caption(captioning)
-        fusion_feat = self.fusionattn(caption_feat, visual) # add idea6-3
-        visual_features = self.encode_video(fusion_feat, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
+        visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
+        visual_features = visual_features + visual
+        fusion_feat = self.fusionattn(caption_feat, visual_features)
 
-        logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))
+        logits1 = self.classifier(fusion_feat + self.mlp2(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X))
         
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
 
         text_features = text_features_ori
         logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256)
-        visual_attn = logits_attn @ visual_features # aggregate(visual features, logits1), (batch, 1, 512)
-        visual_attn = visual_attn / visual_attn.norm(dim=-1, keepdim=True)  # aggregate(visual features, logits1)
+        visual_attn = logits_attn @ fusion_feat # aggregate(visual features, logits1), (batch, 1, 512)
+        visual_attn = visual_attn / visual_attn.norm(dim=-1, keepdim=True)  # aggregate(visual features, logits1), visual_attn.norm -> (batch 1,1), 최종 (batch, 1, 512)
         visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])    # (batch, 14, 512)
-        
+
         text_features = text_features_ori.unsqueeze(0)  # (1, 14, 512)
         text_features = text_features.expand(visual_attn.shape[0], text_features.shape[1], text_features.shape[2]) # (batch, 14, 512)
         text_features = text_features + visual_attn # visual prompt(vision + Text)
         text_features = text_features + self.mlp1(text_features) # label features = visual prompt(ffn(text features) + text features), (batch, 14, 512)
         
-        visual_features_norm = visual_features / visual_features.norm(dim=-1, keepdim=True) # (batch, 256, 512)
+        visual_features_norm = fusion_feat / fusion_feat.norm(dim=-1, keepdim=True) # (batch, 256, 512)
         text_features_norm = text_features / text_features.norm(dim=-1, keepdim=True)
         text_features_norm = text_features_norm.permute(0, 2, 1)    # (batch, 512, 14)
         

@@ -13,8 +13,13 @@ from utils.tools import get_prompt_text, get_batch_label
 import ucf_option
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+import os
+import datetime
 
-writer = SummaryWriter(log_dir='../runs_ucf')
+current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir = os.path.join('../runs_ucf', current_time)
+os.makedirs(log_dir, exist_ok=True)
+writer = SummaryWriter(log_dir=log_dir)
 
 def CLASM(logits, labels, lengths, device): # fine grained
     instance_logits = torch.zeros(0).to(device)
@@ -24,7 +29,7 @@ def CLASM(logits, labels, lengths, device): # fine grained
     for i in range(logits.shape[0]):
         tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True, dim=0) # (lengths, 14) -> (k, 14)
         instance_logits = torch.cat([instance_logits, torch.mean(tmp, 0, keepdim=True)], dim=0) # 각 클래스별 평균(열 평균)
-    # instance logits shape (128, 14)
+    # instance logits shape (batch, 14)
     milloss = -torch.mean(torch.sum(labels * F.log_softmax(instance_logits, dim=1), dim=1), dim=0)
     return milloss
 
