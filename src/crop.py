@@ -133,10 +133,10 @@ def average_features(features, group_size=16):
 
 if __name__ == '__main__':
     # 1. 동영상 파일들이 저장된 기본 경로 (클래스/동영상.mp4 형식)
-    base_path = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Videos'
+    base_path = '/home/vcl/Desktop/YG/VAD_dataset/XD-Violence'
 
     # 2. 추출된 프레임을 이미지 파일로 저장할 경로 (각 클래스별 폴더 생성)
-    frames_output_base = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames'
+    frames_output_base = '/home/vcl/Desktop/YG/VAD_dataset/XD-Violence/Extracted_Frames'
     if not os.path.exists(frames_output_base):
         os.makedirs(frames_output_base)
 
@@ -164,8 +164,8 @@ if __name__ == '__main__':
         for file_name in os.listdir(class_dir):
             if not file_name.lower().endswith('.mp4'):
                 continue  # mp4 파일이 아니면 건너뜁니다.
-            if file_name not in exclude_file:   # 용량 큰 파일 제외
-                continue
+            # if file_name not in exclude_file:   # 용량 큰 파일 제외
+            #     continue
             video_path = os.path.join(class_dir, file_name)
             print("Processing video:", video_path)
             
@@ -210,48 +210,3 @@ if __name__ == '__main__':
             # np.save(features_output_path, video_features)
             # del video_features
             # print("Saved video features for video", video_path, "to", features_output_path)
-    
-    # -------------------------------------------------------------------------------
-    # file1 = './save_path.npy'
-    # file2 = '/home/yoonyeogeon/diffusion_model/VAD_dataset/UCFClipFeatures/Abuse/Abuse001_x264__0.npy'
-    
-    # data1 = np.load(file1)
-    # data2 = np.load(file2)
-
-    # final_feature = average_features(data1, group_size=16)
-    # print(f"Final feature shape: {final_feature.shape}")  # Shape: [video_frames/16, 512]
-
-    # # 1. 데이터 차원 비교
-    # if final_feature.shape != data2.shape:
-    #     print(f"Shape mismatch: {final_feature.shape} vs {data2.shape}")
-    # else:
-    #     print(f"Shapes are identical: {final_feature.shape}")
-
-    # # 2. 데이터 유형 비교
-    # if final_feature.dtype != data2.dtype:
-    #     print(f"Data type mismatch: {final_feature.dtype} vs {data2.dtype}")
-    # else:
-    #     print(f"Data types are identical: {final_feature.dtype}")
-
-    # # 3. 값 비교 (element-wise)
-    # if np.array_equal(final_feature, data2):
-    #     print("The two arrays are identical.")
-    # else:
-    #     print("The two arrays are not identical.")
-    
-    # # 4. 차이 확인 (element-wise 차이 계산)
-    # diff = final_feature - data2  # 값 차이
-    # max_diff = np.max(np.abs(diff))  # 절대값 기준 최대 차이
-    # print(f"Maximum difference: {max_diff}")
-    
-    # # 5. 값이 다른 요소 인덱스 찾기
-    # mismatched_indices = np.where(final_feature != data2)
-    # print(f"Number of mismatched elements: {len(mismatched_indices[0])}")
-    # print(f"Example mismatched indices: {mismatched_indices[0][:10]}")  # 최대 10개만 표시
-
-    # # 6. 데이터의 요약 통계량 비교
-    # print("\nSummary statistics for file1:")
-    # print(f"Mean: {np.mean(final_feature)}, Min: {np.min(final_feature)}, Max: {np.max(final_feature)}")
-
-    # print("\nSummary statistics for file2:")
-    # print(f"Mean: {np.mean(data2)}, Min: {np.min(data2)}, Max: {np.max(data2)}")

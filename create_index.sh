@@ -1,0 +1,1 @@
+python src/create_index.py --captions_dirs='../VAD_dataset/XD-Violence/Extracted_Frames_captions' --output_dir='../VAD_dataset/XD-Violence/create_index' --dataset='xd'

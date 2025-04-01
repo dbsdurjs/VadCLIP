@@ -27,7 +27,7 @@ class FrameDataset(Dataset):
         self.processor = processor  # processor를 멤버 변수로 저장
 
         classes_names = os.listdir(base_folder)
-        classes_names.remove('Training_Normal_Videos_Anomaly')
+        # classes_names.remove('Training_Normal_Videos_Anomaly')
         print(f'작업 폴더 이름 : {classes_names}')
 
         for class_name in os.listdir(base_folder):
@@ -73,7 +73,7 @@ class FrameDataset(Dataset):
         return video_folder_path, image_path, pixel_values, video_name
 
 # 📌 2. 데이터셋 및 데이터 로더 생성
-base_folder = "/media/vcl/DATA/YG/Extracted_Frames/"
+base_folder = "/home/vcl/Desktop/YG/VAD_dataset/XD-Violence/Extracted_Frames"
 dataset = FrameDataset(base_folder, processor)
 dataloader = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=NUM_WORKERS, pin_memory=False)
 
@@ -114,7 +114,7 @@ def generate_captions(dataloader, model, processor, device):
 def delete_existing_files(base_folder):
     
     classes_names = os.listdir(base_folder) # Training_Normal_Videos_Anomaly 제외 나머지
-    classes_names.remove('Training_Normal_Videos_Anomaly')
+    # classes_names.remove('Training_Normal_Videos_Anomaly')
 
     print(f"삭제할 작업 폴더: {classes_names}")
     

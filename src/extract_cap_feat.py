@@ -15,8 +15,8 @@ if __name__ == '__main__':
     model.eval()
 
     # 텍스트 파일들이 있는 폴더와 결과 npy 파일을 저장할 폴더 설정
-    root_text_dir = "/media/vcl/DATA/YG/Extracted_Frames"
-    output_dir = "/media/vcl/DATA/YG/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature"
+    root_text_dir = "/home/vcl/Desktop/YG/VAD_dataset/XD-Violence/Extracted_Frames"
+    output_dir = "/home/vcl/Desktop/YG/VAD_dataset/XD-Violence/xd_caption_feature"
     os.makedirs(output_dir, exist_ok=True)
 
     group_size = 16
@@ -45,7 +45,6 @@ if __name__ == '__main__':
                 for i in range(0, len(captions), batch_size):
                     batch_captions = captions[i:i+batch_size]
                     tokens = clip.tokenize(batch_captions).to(device)
-                    # 여기서는 model.encode_text_cap()를 사용하지만, 표준 CLIP이라면 model.encode_text(tokens)를 사용
                     batch_features = model.encode_text_cap(tokens)
                     batch_features = batch_features.float().detach().cpu().numpy()
                     all_features.append(batch_features)
