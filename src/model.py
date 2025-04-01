@@ -60,32 +60,40 @@ class Attentionfusion(nn.Module):   # add idea6-3
     def __init__(self, fusion_dim, num_heads):
         super(Attentionfusion, self).__init__()
 
-        self.self_attn = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
+        self.self_attn_cap = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
         self.residual_layer1 = nn.LayerNorm(fusion_dim)
         self.dropout1 = nn.Dropout()
 
-        self.cross_attn = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
+        self.self_attn_vis = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
         self.residual_layer2 = nn.LayerNorm(fusion_dim)
         self.dropout2 = nn.Dropout()
+
+        self.cross_attn_cap = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
+        self.residual_layer3 = nn.LayerNorm(fusion_dim)
+        self.dropout3 = nn.Dropout()
+        
+        self.cross_attn_vis = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
+        self.residual_layer4 = nn.LayerNorm(fusion_dim)
+        self.dropout4 = nn.Dropout()
 
         self.linear_transform = nn.Linear(1024, 512) # add idea66-1
 
     def forward(self, caption_feat, visual_feat):
-        caption_input, _ = self.self_attn(caption_feat, caption_feat, caption_feat)
+        caption_input, _ = self.self_attn_cap(caption_feat, caption_feat, caption_feat)
         caption_output = self.residual_layer1(caption_input + caption_feat)
         caption_output = self.dropout1(caption_output)
 
-        visual_input, _ = self.self_attn(visual_feat, visual_feat, visual_feat)
-        visual_output = self.residual_layer1(visual_input + visual_feat)
-        visual_output = self.dropout1(visual_output)
+        visual_input, _ = self.self_attn_vis(visual_feat, visual_feat, visual_feat)
+        visual_output = self.residual_layer2(visual_input + visual_feat)
+        visual_output = self.dropout2(visual_output)
 
-        fusion_cap_feat, _ = self.cross_attn(caption_output, visual_output, visual_output)  # idea66-3
-        fusion_cap_output = self.residual_layer2(fusion_cap_feat + caption_output)
-        fusion_cap_output = self.dropout2(fusion_cap_output)
+        fusion_cap_feat, _ = self.cross_attn_cap(caption_output, visual_output, visual_output)  # idea66-3
+        fusion_cap_output = self.residual_layer3(fusion_cap_feat + caption_output)
+        fusion_cap_output = self.dropout3(fusion_cap_output)
 
-        fusion_vis_feat, _ = self.cross_attn(visual_output, caption_output, caption_output)  # idea66-3
-        fusion_vis_output = self.residual_layer2(fusion_vis_feat + visual_output)
-        fusion_vis_output = self.dropout2(fusion_vis_output)
+        fusion_vis_feat, _ = self.cross_attn_vis(visual_output, caption_output, caption_output)  # idea66-3
+        fusion_vis_output = self.residual_layer4(fusion_vis_feat + visual_output)
+        fusion_vis_output = self.dropout4(fusion_vis_output)
 
         fusion_feat = torch.cat([fusion_cap_output, fusion_vis_output], dim=2) # add idea66-1
 
@@ -189,7 +197,6 @@ class CLIPVAD(nn.Module):
         self.caption_embeddings = nn.Embedding(visual_length, visual_width) # add idea66-6
         self.caption_mlp = nn.Linear(1024, 512)
         self.fusionattn = Attentionfusion(fusion_dim=512, num_heads=8)
-        self.fusionattn2 = Attentionfusion2(fusion_dim=512, num_heads=8)
         self.initialize_parameters()
 
     def initialize_parameters(self):
@@ -283,9 +290,10 @@ class CLIPVAD(nn.Module):
         position_ids = torch.arange(self.visual_length, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size,256)
         frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256, 512)
-        caption = caption + frame_position_embeddings
+        caption = torch.cat([caption, frame_position_embeddings], dim=-1)
+        caption_feat = self.caption_mlp(caption)
 
-        return caption
+        return caption_feat
     
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
         caption_feat = self.task_caption(captioning)
