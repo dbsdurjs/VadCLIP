@@ -13,6 +13,7 @@ from utils.tools import get_prompt_text, get_batch_label
 import xd_option
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+from center_loss import CenterLoss
 
 writer = SummaryWriter(log_dir='../runs_xd')
 
@@ -30,26 +31,31 @@ def CLASM(logits, labels, lengths, device):
 
 def CLAS2(logits, labels, lengths, device):
     instance_logits = torch.zeros(0).to(device)
-    labels = 1 - labels[:, 0].reshape(labels.shape[0])
+    labels = 1 - labels[:, 0].reshape(labels.shape[0]) # (96, 7) -> (96)
     labels = labels.to(device)
-    logits = torch.sigmoid(logits).reshape(logits.shape[0], logits.shape[1])
+    logits = torch.sigmoid(logits).reshape(logits.shape[0], logits.shape[1]) # (96,256)
 
     for i in range(logits.shape[0]):
         tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
         tmp = torch.mean(tmp).view(1)
         instance_logits = torch.cat((instance_logits, tmp))
 
-    clsloss = F.binary_cross_entropy(instance_logits, labels)
+    clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (96), labels (96)
     return clsloss
 
 def train(model, train_loader, test_loader, args, label_map: dict, device):
     model.to(device)
+    weight_cent = 1
 
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)
+    
+    criterion_cent = CenterLoss(num_classes=len(label_map.keys()), feat_dim=512)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer_centloss = torch.optim.SGD(criterion_cent.parameters(), lr=args.lr_cent)
+
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
     prompt_text = get_prompt_text(label_map)
     ap_best = 0
@@ -69,6 +75,7 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
         loss_total1 = 0
         loss_total2 = 0
         loss_total3 = 0
+        loss_total_cent = 0
 
         with tqdm(total=len(train_loader), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
             
@@ -81,7 +88,7 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
 
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
 
-                text_features, logits1, logits2 = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
+                text_features, logits1, logits2, caption_features = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -96,12 +103,21 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
                     loss3 += torch.abs(text_feature_normal @ text_feature_abr)
                 loss3 = loss3 / 6
 
-                loss = loss1 + loss2 + loss3 * 1e-4
+                loss_cent = criterion_cent(caption_features.mean(dim=1), torch.argmax(text_labels, dim=1))
+                loss_cent *= weight_cent
+                loss_total_cent += loss_cent
+
+                loss = loss1 + loss2 + loss3 * 1e-4 + loss_cent
                 loss_total3 += loss3.item()
 
                 optimizer.zero_grad()
+                optimizer_centloss.zero_grad()
+
                 loss.backward()
                 optimizer.step()
+                for param in criterion_cent.parameters():
+                    param.grad.data *= (1. / weight_cent)
+                optimizer_centloss.step()
 
                 # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
@@ -114,11 +130,13 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
+            epoch_loss_cent = loss_total_cent / (i+1)
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
+            writer.add_scalar('loss_cent/train', epoch_loss_cent, e)
 
-            print(f'epoch: {e+1}, loss1: {(loss_total1 / (i+1)):.4f},| loss2: {(loss_total2 / (i+1)):.4f}, loss3: {loss3.item():.4f}')
+            print(f'epoch: {e+1}, loss1: {(loss_total1 / (i+1)):.4f},| loss2: {(loss_total2 / (i+1)):.4f}, loss3: {loss3.item():.4f}, loss_cent: {loss_cent.item():.4f}')
             AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}

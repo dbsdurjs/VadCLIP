@@ -91,7 +91,7 @@ class Attentionfusion(nn.Module):   # add idea6-3
 
         fusion_output = self.linear_transform(fusion_feat)
 
-        return fusion_output
+        return fusion_output, caption_output
     
 class CLIPVAD(nn.Module):
     def __init__(self,
@@ -151,7 +151,7 @@ class CLIPVAD(nn.Module):
         self.frame_position_embeddings = nn.Embedding(visual_length, visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
         self.caption_embeddings = nn.Embedding(visual_length, visual_width) # add idea66-6
-
+        self.caption_mlp = nn.Linear(1024, 512)
         self.fusionattn = Attentionfusion(fusion_dim=512, num_heads=8)
         self.initialize_parameters()
 
@@ -246,13 +246,14 @@ class CLIPVAD(nn.Module):
         position_ids = torch.arange(self.visual_length, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size,256)
         frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256, 512)
-        caption = caption + frame_position_embeddings
+        caption = torch.cat([caption, frame_position_embeddings], dim=-1)
+        caption_feat = self.caption_mlp(caption)
 
-        return caption
+        return caption_feat
     
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
         caption_feat = self.task_caption(captioning)
-        fusion_feat = self.fusionattn(caption_feat, visual) # add idea6-3
+        fusion_feat, caption_output = self.fusionattn(caption_feat, visual) # add idea6-3
         visual_features = self.encode_video(fusion_feat, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
 
         logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))
@@ -276,5 +277,5 @@ class CLIPVAD(nn.Module):
         
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 14)
 
-        return text_features_ori, logits1, logits2
+        return text_features_ori, logits1, logits2, caption_output
     
