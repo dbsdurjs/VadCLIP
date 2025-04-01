@@ -13,8 +13,13 @@ from utils.tools import get_prompt_text, get_batch_label
 import ucf_option
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
+import datetime
+import os
 
-writer = SummaryWriter(log_dir='../runs_ucf')
+current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir = os.path.join('../runs_ucf', current_time)
+os.makedirs(log_dir, exist_ok=True)
+writer = SummaryWriter(log_dir=log_dir)
 
 def CLASM(logits, labels, lengths, device): # fine grained
     instance_logits = torch.zeros(0).to(device)
