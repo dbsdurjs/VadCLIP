@@ -144,7 +144,7 @@ class CLIPVAD(nn.Module):
                  visual_length: int,
                  visual_width: int,
                  visual_head: int, # 1
-                 visual_layers: int, # 1
+                 visual_layers: int, # 1 or 2
                  attn_window: int,
                  prompt_prefix: int,
                  prompt_postfix: int,
@@ -155,7 +155,7 @@ class CLIPVAD(nn.Module):
         self.visual_length = visual_length  # 256
         self.visual_width = visual_width    # 512
         self.embed_dim = embed_dim
-        self.attn_window = attn_window
+        self.attn_window = attn_window # 8
         self.prompt_prefix = prompt_prefix
         self.prompt_postfix = prompt_postfix
         self.device = device
@@ -203,7 +203,7 @@ class CLIPVAD(nn.Module):
         nn.init.normal_(self.text_prompt_embeddings.weight, std=0.01)
         nn.init.normal_(self.frame_position_embeddings.weight, std=0.01)
 
-    def build_attention_mask(self, attn_window):
+    def build_attention_mask(self, attn_window): # 대각선 부분만 0으로 만들기, 나머지는 inf
         # lazily create causal attention mask, with full attention between the vision tokens
         # pytorch uses additive attention mask; fill with -inf
         mask = torch.empty(self.visual_length, self.visual_length)
@@ -298,7 +298,6 @@ class CLIPVAD(nn.Module):
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
         caption_feat = self.task_caption(captioning)
         visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
-        visual_features = visual_features + visual
         fusion_feat = self.fusionattn(caption_feat, visual_features)
 
         logits1 = self.classifier(fusion_feat + self.mlp2(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X))

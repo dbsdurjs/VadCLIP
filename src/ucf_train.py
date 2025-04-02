@@ -21,7 +21,7 @@ log_dir = os.path.join('../runs_ucf', current_time)
 os.makedirs(log_dir, exist_ok=True)
 writer = SummaryWriter(log_dir=log_dir)
 
-def CLASM(logits, labels, lengths, device): # fine grained
+def CLASM(logits, labels, lengths, device): # fine grained, labels(128, 14)
     instance_logits = torch.zeros(0).to(device)
     labels = labels / torch.sum(labels, dim=1, keepdim=True)
     labels = labels.to(device)
@@ -35,9 +35,9 @@ def CLASM(logits, labels, lengths, device): # fine grained
 
 def CLAS2(logits, labels, lengths, device): # coarse grained
     instance_logits = torch.zeros(0).to(device)
-    labels = 1 - labels[:, 0].reshape(labels.shape[0])
-    labels = labels.to(device)
-    logits = torch.sigmoid(logits).reshape(logits.shape[0], logits.shape[1])
+    labels = 1 - labels[:, 0].reshape(labels.shape[0]) # 1 - normal 클래스
+    labels = labels.to(device) # (128, 256, 1)
+    logits = torch.sigmoid(logits).reshape(logits.shape[0], logits.shape[1]) # (128, 256)
 
     for i in range(logits.shape[0]):
         tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
@@ -80,7 +80,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
             for i in range(min(len(normal_loader), len(anomaly_loader))):
                 normal_features, normal_label, normal_lengths, normal_cap_features, normal_cap_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
-                anomaly_features, anomaly_label, anomaly_lengths, anomaly_cap_features, anomaly_cap_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
+                anomaly_features, anomaly_label, anomaly_lengths, anomaly_cap_features, anomaly_cap_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512]), lengths: 256 전 실제 길이
 
                 visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # 128,256,1024
                 cap_features = torch.cat([normal_cap_features, anomaly_cap_features], dim=0).to(device) # add idea6-3
