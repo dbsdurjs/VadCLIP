@@ -60,8 +60,8 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)#, weight_decay=1e-04)
     optimizer_centloss = torch.optim.SGD(criterion_cent.parameters(), lr=args.lr)
 
-    scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
-    # scheduler = CosineAnnealingLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
+    # scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
+    scheduler = CosineAnnealingLR(optimizer, T_max=50)
 
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
     ap_best = 0
