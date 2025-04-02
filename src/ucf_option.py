@@ -37,4 +37,4 @@ parser.add_argument('--frame_base_folder', default='../VAD_dataset/UCF-Crimes/UC
 
 parser.add_argument('--lr', default=2e-5)
 parser.add_argument('--scheduler-rate', default=0.1)
-parser.add_argument('--scheduler-milestones', default=[4, 8])
+parser.add_argument('--scheduler-milestones', default=[5])

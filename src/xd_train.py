@@ -14,8 +14,13 @@ import xd_option
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 from center_loss import CenterLoss
+import datetime
+import os
 
-writer = SummaryWriter(log_dir='../runs_xd')
+current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+log_dir = os.path.join('../runs_xd', current_time)
+os.makedirs(log_dir, exist_ok=True)
+writer = SummaryWriter(log_dir=log_dir)
 
 def CLASM(logits, labels, lengths, device):
     instance_logits = torch.zeros(0).to(device)
@@ -45,7 +50,7 @@ def CLAS2(logits, labels, lengths, device):
 
 def train(model, train_loader, test_loader, args, label_map: dict, device):
     model.to(device)
-    weight_cent = 1
+    weight_cent = 0.0001
 
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
@@ -54,9 +59,11 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
     criterion_cent = CenterLoss(num_classes=len(label_map.keys()), feat_dim=512)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    optimizer_centloss = torch.optim.SGD(criterion_cent.parameters(), lr=args.lr_cent)
+    optimizer_centloss = torch.optim.SGD(criterion_cent.parameters(), lr=args.lr)
 
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
+    # scheduler = CosineAnnealingLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
+
     prompt_text = get_prompt_text(label_map)
     ap_best = 0
     epoch = 0
@@ -78,7 +85,6 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
         loss_total_cent = 0
 
         with tqdm(total=len(train_loader), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
-            
             for i, item in enumerate(train_loader):
                 visual_feat, text_labels, feat_lengths, cap_feature, cap_length, _, _, _  = item
                 visual_feat = visual_feat.to(device)
@@ -88,7 +94,7 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
 
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
 
-                text_features, logits1, logits2, caption_features = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
+                text_features, logits1, logits2, vis_features = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -103,7 +109,7 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
                     loss3 += torch.abs(text_feature_normal @ text_feature_abr)
                 loss3 = loss3 / 6
 
-                loss_cent = criterion_cent(caption_features.mean(dim=1), torch.argmax(text_labels, dim=1))
+                loss_cent = criterion_cent(vis_features.mean(dim=1), torch.argmax(text_labels, dim=1))
                 loss_cent *= weight_cent
                 loss_total_cent += loss_cent
 
@@ -123,7 +129,8 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
                 pbar.set_postfix(
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
-                    loss3=f"{loss3.item():.4f}",
+                    loss3=f"{(loss_total3 / (i+1)):.4f}",
+                    loss_cent=f"{(loss_total_cent / (i+1)):.4f}"
                 )
                 pbar.update(1)
             # 에포크 손실값 평균 계산 후 TensorBoard에 기록

@@ -57,7 +57,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     lengths[j] = length
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2 = model(visual, cap_features, padding_mask, prompt_text, lengths, cap_feat_lengths)
+            _, logits1, logits2, _ = model(visual, cap_features, padding_mask, prompt_text, lengths, cap_feat_lengths)
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2])
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2])
             prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1))
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
-    # model_param = torch.load(args.model_path)
+    model_param = torch.load(args.model_path)
     model_param = torch.load(args.checkpoint_path) # add
     model_param = model_param['model_state_dict'] # add
     model.load_state_dict(model_param)

@@ -91,7 +91,7 @@ class Attentionfusion(nn.Module):   # add idea6-3
 
         fusion_output = self.linear_transform(fusion_feat)
 
-        return fusion_output, caption_output
+        return fusion_output
     
 class CLIPVAD(nn.Module):
     def __init__(self,
@@ -253,7 +253,7 @@ class CLIPVAD(nn.Module):
     
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
         caption_feat = self.task_caption(captioning)
-        fusion_feat, caption_output = self.fusionattn(caption_feat, visual) # add idea6-3
+        fusion_feat = self.fusionattn(caption_feat, visual) # add idea6-3
         visual_features = self.encode_video(fusion_feat, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
 
         logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))
@@ -277,5 +277,5 @@ class CLIPVAD(nn.Module):
         
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 14)
 
-        return text_features_ori, logits1, logits2, caption_output
+        return text_features_ori, logits1, logits2, visual_features
     

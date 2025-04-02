@@ -35,4 +35,4 @@ parser.add_argument('--gt-label-path', default='list/gt_label.npy')
 
 parser.add_argument('--lr', default=1e-5)
 parser.add_argument('--scheduler-rate', default=0.1)
-parser.add_argument('--scheduler-milestones', default=[3, 6, 10])
+parser.add_argument('--scheduler-milestones', default=[6])
