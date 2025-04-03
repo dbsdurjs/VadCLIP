@@ -58,7 +58,7 @@ if __name__ == '__main__':
 	parser.add_argument('--outputpath', type=str, default="../VAD_dataset/XDClipFeatures_I3D/")
 	parser.add_argument('--pretrainedpath', type=str, default="./I3D_Feature_Extraction_resnet/pretrained/i3d_r50_kinetics.pth")
 	parser.add_argument('--frequency', type=int, default=16)
-	parser.add_argument('--batch_size', type=int, default=20)
+	parser.add_argument('--batch_size', type=int, default=128)
 	parser.add_argument('--sample_mode', type=str, default="oversample")
 	args = parser.parse_args()
 	generate(args.datasetpath, str(args.outputpath), args.pretrainedpath, args.frequency, args.batch_size, args.sample_mode)    

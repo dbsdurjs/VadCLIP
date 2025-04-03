@@ -1,0 +1,2 @@
+python ./I3D_Feature_Extraction_resnet/main.py --datasetpath="../VAD_dataset/XD-Violence/train_videos/"
+python ./I3D_Feature_Extraction_resnet/main.py --datasetpath="../VAD_dataset/XD-Violence/videos/"
