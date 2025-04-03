@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import MultiStepLR,CosineAnnealingLR
+from torch.optim.lr_scheduler import *
 import numpy as np
 import random
 
@@ -16,6 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from center_loss import CenterLoss
 import datetime
 import os
+from transformers import get_cosine_with_hard_restarts_schedule_with_warmup
 
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 log_dir = os.path.join('../runs_ucf', current_time)
@@ -57,12 +58,11 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
     criterion_cent = CenterLoss(num_classes=len(label_map.keys()), feat_dim=512)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)#, weight_decay=1e-04)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     optimizer_centloss = torch.optim.SGD(criterion_cent.parameters(), lr=args.lr)
 
     # scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
-    scheduler = CosineAnnealingLR(optimizer, T_max=50)
-
+    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=5, eta_min=1e-6)
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
     ap_best = 0
     epoch = 0
@@ -82,6 +82,8 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         loss_total2 = 0
         loss_total3 = 0
         loss_total_cent = 0
+        total_loss = 0
+
         normal_iter = iter(normal_loader)
         anomaly_iter = iter(anomaly_loader)
         
@@ -99,7 +101,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (128, 14)
 
-                text_features, logits1, logits2, vis_features = model(visual_features, cap_features, None, prompt_text, feat_lengths, cap_feat_lengths) # edit idea6-3
+                text_features, logits1, logits2 = model(visual_features, cap_features, None, prompt_text, feat_lengths, cap_feat_lengths) # edit idea6-3
                 
                 #loss1 - coarse grained
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device)
@@ -107,52 +109,54 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 
                 #loss2 - fine grained
                 loss2 = CLASM(logits2, text_labels, feat_lengths, device) # logits2 shape (128, 256, 14)
-
                 loss_total2 += loss2.item()
+
                 #loss3
                 loss3 = torch.zeros(1).to(device)
                 text_feature_normal = text_features[0] / text_features[0].norm(dim=-1, keepdim=True)
                 for j in range(1, text_features.shape[0]):
                     text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
                     loss3 += torch.abs(text_feature_normal @ text_feature_abr)
-                loss3 = loss3 / 13 * 1e-1
-
-                loss_cent = criterion_cent(vis_features.mean(1), torch.argmax(text_labels, dim=1))
-                loss_cent *= weight_cent
-
-                loss_total_cent += loss_cent.item()
-                
-                loss = loss1 + loss2 + loss3 + loss_cent
+                loss3 = loss3 / 13
                 loss_total3 += loss3.item()
+
+                # loss_cent = criterion_cent(caption_features.mean(1), torch.argmax(text_labels, dim=1))
+                # loss_cent *= weight_cent
+                # loss_total_cent += loss_cent.item()
                 
+                loss = loss1 + loss2 + loss3
+                total_loss += loss.item()
+
                 optimizer.zero_grad()
-                optimizer_centloss.zero_grad()
+                # optimizer_centloss.zero_grad()
 
                 loss.backward()
                 optimizer.step()
-                for param in criterion_cent.parameters():
-                    param.grad.data *= (1. / weight_cent)
-                optimizer_centloss.step()
+                # for param in criterion_cent.parameters():
+                #     param.grad.data *= (1. / weight_cent)
+                # optimizer_centloss.step()
 
                 # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    loss_cent=f"{(loss_total_cent / (i+1)):.4f}"
+                    # loss_cent=f"{(loss_total_cent / (i+1)):.4f}",
+                    loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
                 pbar.update(1)
             # 에포크 손실값 평균 계산 후 TensorBoard에 기록
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            epoch_loss_cent = loss_total_cent / (i+1)
+            # epoch_loss_cent = loss_total_cent / (i+1)
+            epoch_loss_total = total_loss / (i+1)
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            writer.add_scalar('loss_cent/train', epoch_loss_cent, e)
-            
-            print(f'epoch: {e+1}, loss1: {(loss_total1 / (i+1)):.4f},| loss2: {(loss_total2 / (i+1)):.4f}, loss3: {loss3.item():.4f}, loss_cent: {loss_cent.item():.4f}')
+            # writer.add_scalar('loss_cent/train', epoch_loss_cent, e)
+            writer.add_scalar('loss_total/train', epoch_loss_total, e)
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_total: {epoch_loss_total:.4f}') # , loss_cent: {epoch_loss_cent:.4f}
             AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
