@@ -75,16 +75,16 @@ class Attentionfusion(nn.Module):   # add idea6-3
         caption_output = self.residual_layer1(caption_input + caption_feat)
         caption_output = self.dropout1(caption_output)
 
-        visual_input, _ = self.self_attn(visual_feat, visual_feat, visual_feat)
-        visual_output = self.residual_layer1(visual_input + visual_feat)
-        visual_output = self.dropout1(visual_output)
+        # visual_input, _ = self.self_attn(visual_feat, visual_feat, visual_feat)
+        # visual_output = self.residual_layer1(visual_input + visual_feat)
+        # visual_output = self.dropout1(visual_output)
 
-        fusion_cap_feat, _ = self.cross_attn(caption_output, visual_output, visual_output)  # idea66-3
+        fusion_cap_feat, _ = self.cross_attn(caption_output, visual_feat, visual_feat)  # idea66-3
         fusion_cap_output = self.residual_layer2(fusion_cap_feat + caption_output)
         fusion_cap_output = self.dropout2(fusion_cap_output)
 
-        fusion_vis_feat, _ = self.cross_attn(visual_output, caption_output, caption_output)  # idea66-3
-        fusion_vis_output = self.residual_layer2(fusion_vis_feat + visual_output)
+        fusion_vis_feat, _ = self.cross_attn(visual_feat, caption_output, caption_output)  # idea66-3
+        fusion_vis_output = self.residual_layer2(fusion_vis_feat + visual_feat)
         fusion_vis_output = self.dropout2(fusion_vis_output)
 
         fusion_feat = torch.cat([fusion_cap_output, fusion_vis_output], dim=2) # add idea66-1
@@ -253,16 +253,16 @@ class CLIPVAD(nn.Module):
     
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
         caption_feat = self.task_caption(captioning)
-        fusion_feat = self.fusionattn(caption_feat, visual) # add idea6-3
-        visual_features = self.encode_video(fusion_feat, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
+        visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
+        fusion_feat = self.fusionattn(caption_feat, visual_features) # add idea6-3
 
-        logits1 = self.classifier(visual_features + self.mlp2(visual_features)) # A = Sigmoid(FC(FFN(X) + X))
+        logits1 = self.classifier(fusion_feat + self.mlp2(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X))
         
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
 
         text_features = text_features_ori
         logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256)
-        visual_attn = logits_attn @ visual_features # aggregate(visual features, logits1), (batch, 1, 512)
+        visual_attn = logits_attn @ fusion_feat # aggregate(visual features, logits1), (batch, 1, 512)
         visual_attn = visual_attn / visual_attn.norm(dim=-1, keepdim=True)  # aggregate(visual features, logits1)
         visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])    # (batch, 14, 512)
         
@@ -271,11 +271,11 @@ class CLIPVAD(nn.Module):
         text_features = text_features + visual_attn # visual prompt(vision + Text)
         text_features = text_features + self.mlp1(text_features) # label features = visual prompt(ffn(text features) + text features), (batch, 14, 512)
         
-        visual_features_norm = visual_features / visual_features.norm(dim=-1, keepdim=True) # (batch, 256, 512)
+        visual_features_norm = fusion_feat / fusion_feat.norm(dim=-1, keepdim=True) # (batch, 256, 512)
         text_features_norm = text_features / text_features.norm(dim=-1, keepdim=True)
         text_features_norm = text_features_norm.permute(0, 2, 1)    # (batch, 512, 14)
         
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 14)
 
-        return text_features_ori, logits1, logits2, visual_features
+        return text_features_ori, logits1, logits2
     
