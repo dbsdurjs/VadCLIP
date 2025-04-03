@@ -37,7 +37,7 @@ def generate(datasetpath, outputpath, pretrainedpath, frequency, batch_size, sam
 		print("Obtained features of size: ", features.shape)
 		shutil.rmtree(temppath)
 		print("done in {0}.".format(time.time() - startime))
-
+asfdasd
 if __name__ == '__main__': 
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--datasetpath', type=str, default="samplevideos/")
