@@ -1,6 +1,6 @@
-# CUDA_VISIBLE_DEVICES=0 python src/ucf_train.py --model-path='../vadclip_pth/model/model_ucf_caption(idea66-2).pth' --checkpoint-path='../vadclip_pth/model/checkpoint_caption(idea66-2).pth' --using-caption
-# CUDA_VISIBLE_DEVICES=0 python src/ucf_test.py --model-path '../vadclip_pth/model/model_ucf_caption(idea66-2).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_caption(idea66-2).pth' --using-caption --save-test-result
+python src/ucf_train.py --model-path='../vadclip_pth/model/model_ucf_caption(idea66-2).pth' --checkpoint-path='../vadclip_pth/model/checkpoint_caption(idea66-2).pth' --using-caption
+python src/ucf_test.py --model-path '../vadclip_pth/model/model_ucf_caption(idea66-2).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_caption(idea66-2).pth' --using-caption --save-test-result
 
-python src/xd_train.py --model-path='../vadclip_pth/model/model_xd_caption(idea66-2).pth' --checkpoint-path='../vadclip_pth/model/checkpoint_caption(idea66-2).pth' --using-caption
-python src/xd_test.py --model-path '../vadclip_pth/model/model_xd_caption(idea66-2).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_caption(idea66-2).pth' --using-caption --save-test-result
+# python src/xd_train.py --model-path='../vadclip_pth/model/model_xd_caption(idea66-2).pth' --checkpoint-path='../vadclip_pth/model/checkpoint_caption(idea66-2).pth' --using-caption
+# python src/xd_test.py --model-path '../vadclip_pth/model/model_xd_caption(idea66-2).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_caption(idea66-2).pth' --using-caption --save-test-result
 
