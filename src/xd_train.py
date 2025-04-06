@@ -48,7 +48,7 @@ def CLAS2(logits, labels, lengths, device):
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (96), labels (96)
     return clsloss
 
-def train(model, train_loader, test_loader, args, label_map: dict, device):
+def train(model, train_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
     model.to(device)
     weight_cent = 0.0001
 

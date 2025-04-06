@@ -284,5 +284,5 @@ class CLIPVAD(nn.Module):
         
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 14)
 
-        return text_features_ori, logits1, logits2
+        return text_features_ori, logits1, logits2, visual_features, caption_feat
     
