@@ -48,6 +48,19 @@ def CLAS2(logits, labels, lengths, device):
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (96), labels (96)
     return clsloss
 
+def fusion_loss(visual_features, caption_features, lengths, cap_lengths, device):
+    batch_size = visual_features.shape[0]
+    
+    vis_mean = torch.zeros(batch_size, visual_features.shape[2]).to(device)  # (128, 512)
+    cap_mean = torch.zeros(batch_size, caption_features.shape[2]).to(device)  # (128, 512)
+    for i in range(batch_size):
+        vis_mean[i] = visual_features[i, :lengths[i]].mean(dim=0)
+        cap_mean[i] = caption_features[i, :cap_lengths[i]].mean(dim=0)
+    vis_mean = vis_mean / (vis_mean.norm(dim=-1, keepdim=True))  # (128, 512)
+    cap_mean = cap_mean / (cap_mean.norm(dim=-1, keepdim=True))  # (128, 512)
+    loss = F.mse_loss(vis_mean, cap_mean)
+    return loss
+
 def train(model, train_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
     model.to(device)
     weight_cent = 0.0001
@@ -82,6 +95,7 @@ def train(model, train_loader, test_loader, args, label_map: dict, device): # v=
         loss_total2 = 0
         loss_total3 = 0
         loss_total_cent = 0
+        loss_total_fusion = 0
         total_loss = 0
 
         with tqdm(total=len(train_loader), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
@@ -94,7 +108,7 @@ def train(model, train_loader, test_loader, args, label_map: dict, device): # v=
 
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
 
-                text_features, logits1, logits2 = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
+                text_features, logits1, logits2, vis_feat, cap_feat = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -110,11 +124,14 @@ def train(model, train_loader, test_loader, args, label_map: dict, device): # v=
                 loss3 = loss3 / 6
                 loss_total3 += loss3.item()
 
+                loss_fusion = fusion_loss(vis_feat, cap_feat, feat_lengths, cap_length, device)
+                loss_total_fusion += loss_fusion.item()
+
                 # loss_cent = criterion_cent(fuse_features.mean(dim=1), torch.argmax(text_labels, dim=1))
                 # loss_cent *= weight_cent
                 # loss_total_cent += loss_cent.item()
 
-                loss = loss1 + loss2 + loss3
+                loss = loss1 + loss2 + loss3 + loss_fusion
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -131,23 +148,24 @@ def train(model, train_loader, test_loader, args, label_map: dict, device): # v=
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    # loss_cent=f"{(loss_total_cent / (i+1)):.4f}",
+                    loss_fusion=f"{(loss_total_fusion / (i+1)):.4f}",  # 새로운 손실 추가
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
                 pbar.update(1)
-            # 에포크 손실값 평균 계산 후 TensorBoard에 기록
+
+            # 에포크 손실 기록
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            # epoch_loss_cent = loss_total_cent / (i+1)
+            epoch_loss_fusion = loss_total_fusion / (i+1)
             epoch_loss_total = total_loss / (i+1)
+            
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            # writer.add_scalar('loss_cent/train', epoch_loss_cent, e)
+            writer.add_scalar('loss_fusion/train', epoch_loss_fusion, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_total: {epoch_loss_total:.4f}') # , loss_cent: {epoch_loss_cent:.4f}
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_fusion: {epoch_loss_fusion:.4f}, loss_total: {epoch_loss_total:.4f}')
             AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}

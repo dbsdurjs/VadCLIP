@@ -92,6 +92,7 @@ class Attentionfusion(nn.Module):   # add idea6-3
         fusion_vis_feat, _ = self.cross_attn(visual_feat, caption_output, caption_output)  # idea66-3
         fusion_vis_output = self.residual_layer2(fusion_vis_feat + visual_feat)
         fusion_vis_output = self.dropout2(fusion_vis_output)
+
         enhance_vis_feat = self.ffn(fusion_vis_output)
 
         # fusion_feat = torch.cat([fusion_cap_output, fusion_vis_output], dim=2) # add idea66-1
@@ -159,6 +160,7 @@ class CLIPVAD(nn.Module):
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
         self.caption_embeddings = nn.Embedding(visual_length, visual_width) # add idea66-6
         self.caption_mlp = nn.Linear(1024, 512)
+        self.caption_conv = nn.Conv2d(in_channels=1024, out_channels=512, kernel_size=1)
         self.fusionattn = Attentionfusion(fusion_dim=512, num_heads=8)
         self.initialize_parameters()
 
