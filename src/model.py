@@ -40,7 +40,7 @@ class ResidualAttentionBlock(nn.Module):
         return self.attn(x, x, x, need_weights=False, key_padding_mask=padding_mask, attn_mask=self.attn_mask)[0]
 
     def forward(self, x):
-        x, padding_mask = x
+        x, padding_mask = x # padding_maks : None(default)
         x = x + self.attention(self.ln_1(x), padding_mask)
         x = x + self.mlp(self.ln_2(x))
         return (x, padding_mask)
@@ -51,7 +51,7 @@ class Transformer(nn.Module):
         super().__init__()
         self.width = width
         self.layers = layers
-        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(896, heads, attn_mask) for _ in range(layers)])
 
     def forward(self, x: torch.Tensor):
         return self.resblocks(x)
@@ -71,7 +71,7 @@ class Attentionfusion(nn.Module):   # add idea6-3
         self.linear_transform = nn.Linear(1024, 512) # add idea66-1
 
         self.ffn = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(512, 512 * 4)),
+            ("c_fc", nn.Linear(1792, 512 * 4)),
             ("gelu", QuickGELU()),
             ("c_proj", nn.Linear(512 * 4, 512))
         ]))
@@ -81,22 +81,21 @@ class Attentionfusion(nn.Module):   # add idea6-3
         caption_output = self.residual_layer1(caption_input + caption_feat)
         caption_output = self.dropout1(caption_output)
 
-        # visual_input, _ = self.self_attn(visual_feat, visual_feat, visual_feat)
-        # visual_output = self.residual_layer1(visual_input + visual_feat)
-        # visual_output = self.dropout1(visual_output)
+        visual_input, _ = self.self_attn(visual_feat, visual_feat, visual_feat)
+        visual_output = self.residual_layer1(visual_input + visual_feat)
+        visual_output = self.dropout1(visual_output)
 
-        # fusion_cap_feat, _ = self.cross_attn(caption_output, visual_feat, visual_feat)  # idea66-3
-        # fusion_cap_output = self.residual_layer2(fusion_cap_feat + caption_output)
-        # fusion_cap_output = self.dropout2(fusion_cap_output)
+        fusion_cap_feat, _ = self.cross_attn(caption_output, visual_feat, visual_feat)  # idea66-3
+        fusion_cap_output = self.residual_layer2(fusion_cap_feat + caption_output)
+        fusion_cap_output = self.dropout2(fusion_cap_output)
 
         fusion_vis_feat, _ = self.cross_attn(visual_feat, caption_output, caption_output)  # idea66-3
         fusion_vis_output = self.residual_layer2(fusion_vis_feat + visual_feat)
         fusion_vis_output = self.dropout2(fusion_vis_output)
+        
+        fusion_feat = torch.cat([fusion_cap_output, fusion_vis_output], dim=2) # add idea66-1
 
-        enhance_vis_feat = self.ffn(fusion_vis_output)
-
-        # fusion_feat = torch.cat([fusion_cap_output, fusion_vis_output], dim=2) # add idea66-1
-
+        enhance_vis_feat = self.ffn(fusion_feat)
         # fusion_output = self.linear_transform(fusion_feat)
 
         return enhance_vis_feat
@@ -131,6 +130,12 @@ class CLIPVAD(nn.Module):
             attn_mask=self.build_attention_mask(self.attn_window)
         )
 
+        self.temporal2 = Transformer(
+            width=visual_width,
+            layers=visual_layers,
+            heads=visual_head
+        )
+
         width = int(visual_width / 2)
         self.gc1 = GraphConvolution(visual_width, width, residual=True)
         self.gc2 = GraphConvolution(width, width, residual=True)
@@ -159,14 +164,24 @@ class CLIPVAD(nn.Module):
         self.frame_position_embeddings = nn.Embedding(visual_length, visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
         self.caption_embeddings = nn.Embedding(visual_length, visual_width) # add idea66-6
+
         self.caption_mlp = nn.Linear(1024, 512)
-        self.caption_conv = nn.Conv2d(in_channels=1024, out_channels=512, kernel_size=1)
-        self.fusionattn = Attentionfusion(fusion_dim=512, num_heads=8)
+        self.img_mlp = nn.Linear(1024, 512)
+        self.fusionattn = Attentionfusion(fusion_dim=896, num_heads=8)
+
+        self.feat1 = nn.Conv1d(512, 128, kernel_size=3, stride=1, dilation=1, padding=1, bias=False)
+        self.feat2 = nn.Conv1d(512, 128, kernel_size=3, stride=1, dilation=2, padding=2, bias=False)
+        self.feat3 = nn.Conv1d(512, 128, kernel_size=3, stride=1, dilation=3, padding=3, bias=False)
+		
         self.initialize_parameters()
 
     def initialize_parameters(self):
         nn.init.normal_(self.text_prompt_embeddings.weight, std=0.01)
         nn.init.normal_(self.frame_position_embeddings.weight, std=0.01)
+        nn.init.normal_(self.caption_embeddings.weight, std=0.01)
+        nn.init.normal_(self.feat1.weight, std=0.01)
+        nn.init.normal_(self.feat2.weight, std=0.01)
+        nn.init.normal_(self.feat3.weight, std=0.01)
 
     def build_attention_mask(self, attn_window):
         # lazily create causal attention mask, with full attention between the vision tokens
@@ -260,13 +275,43 @@ class CLIPVAD(nn.Module):
 
         return caption_feat
     
+    def task_img(self, images):  # LGT Adapter
+        images = images.to(torch.float) # (batch size, 256, 512)
+        position_ids = torch.arange(self.visual_length, device=self.device)
+        position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)    # (batch size,256)
+        frame_position_embeddings = self.frame_position_embeddings(position_ids)    # (batch size, 256, 512)
+        img = torch.cat([images, frame_position_embeddings], dim=-1)
+        img_feat = self.img_mlp(img)
+
+        return img_feat
+    
+    def dtp(self, x): # (batch, 256, 512)
+        x0 = torch.transpose(x, 1, 2) # (batch, 512, 256)
+        x_t = x.transpose(1, 2)
+        x1 = self.feat1(x_t) # (64, 128, 256)
+        x2 = self.feat2(x_t) # (64, 128, 256)
+        x3 = self.feat3(x_t) # (64, 128, 256)
+
+        x = torch.cat((x0, x1, x2, x3), dim=1) # (64, 896, 256)
+
+        return x.transpose(1, 2)
+
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
         caption_feat = self.task_caption(captioning)
-        visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
-        fusion_feat = self.fusionattn(caption_feat, visual_features) # add idea6-3
+        # caption_feat = self.encode_video(captioning, padding_mask, cap_lengths)
+        visual_feat = self.task_img(visual)
 
-        logits1 = self.classifier(fusion_feat + self.mlp2(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X))
-        
+        local_cap_feat = self.dtp(caption_feat)
+        local_vis_feat = self.dtp(visual_feat)
+
+        global_cap_feat, _ = self.temporal2((local_cap_feat, None))
+        global_vis_feat, _ = self.temporal2((local_vis_feat, None))
+
+        # visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
+        fusion_feat = self.fusionattn(global_cap_feat, global_vis_feat) # add idea6-3
+
+        logits1 = self.classifier(fusion_feat + self.mlp2(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
+
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
 
         text_features = text_features_ori
@@ -286,5 +331,5 @@ class CLIPVAD(nn.Module):
         
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 14)
 
-        return text_features_ori, logits1, logits2, visual_features, caption_feat
+        return text_features_ori, logits1, logits2, visual_feat, caption_feat
     

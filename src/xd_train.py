@@ -36,45 +36,58 @@ def CLASM(logits, labels, lengths, device):
 
 def CLAS2(logits, labels, lengths, device):
     instance_logits = torch.zeros(0).to(device)
-    labels = 1 - labels[:, 0].reshape(labels.shape[0]) # (96, 7) -> (96)
+    labels = 1 - labels[:, 0].reshape(labels.shape[0]) # (batch, 7) -> (batch)
     labels = labels.to(device)
-    logits = torch.sigmoid(logits).reshape(logits.shape[0], logits.shape[1]) # (96,256)
+    logits = torch.sigmoid(logits).reshape(logits.shape[0], logits.shape[1]) # (batch,256)
 
     for i in range(logits.shape[0]):
         tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
         tmp = torch.mean(tmp).view(1)
         instance_logits = torch.cat((instance_logits, tmp))
 
-    clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (96), labels (96)
+    clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (batch), labels (batch)
     return clsloss
 
 def fusion_loss(visual_features, caption_features, lengths, cap_lengths, device):
     batch_size = visual_features.shape[0]
     
-    vis_mean = torch.zeros(batch_size, visual_features.shape[2]).to(device)  # (128, 512)
-    cap_mean = torch.zeros(batch_size, caption_features.shape[2]).to(device)  # (128, 512)
+    vis_mean = torch.zeros(batch_size, visual_features.shape[2]).to(device)  # (batch, 512)
+    cap_mean = torch.zeros(batch_size, caption_features.shape[2]).to(device)  # (batch, 512)
     for i in range(batch_size):
         vis_mean[i] = visual_features[i, :lengths[i]].mean(dim=0)
         cap_mean[i] = caption_features[i, :cap_lengths[i]].mean(dim=0)
-    vis_mean = vis_mean / (vis_mean.norm(dim=-1, keepdim=True))  # (128, 512)
-    cap_mean = cap_mean / (cap_mean.norm(dim=-1, keepdim=True))  # (128, 512)
+    vis_mean = vis_mean / (vis_mean.norm(dim=-1, keepdim=True))  # (batch, 512)
+    cap_mean = cap_mean / (cap_mean.norm(dim=-1, keepdim=True))  # (batch, 512)
     loss = F.mse_loss(vis_mean, cap_mean)
     return loss
 
-def train(model, train_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
+# RTFM 손실 클래스 정의
+class RTFM_loss(nn.Module):
+    def __init__(self, alpha, margin):
+        super(RTFM_loss, self).__init__()
+        self.alpha = alpha
+        self.margin = margin
+
+    def forward(self, feat_n, feat_a, loss1):
+        loss_cls = loss1
+        loss_abn = torch.abs(self.margin - torch.norm(torch.mean(feat_a, dim=1), p=2, dim=1))
+        loss_nor = torch.norm(torch.mean(feat_n, dim=1), p=2, dim=1)
+        loss_rtfm = torch.mean((loss_abn + loss_nor) ** 2)
+        loss_total = loss_cls + self.alpha * loss_rtfm
+        return loss_total
+    
+def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
     model.to(device)
-    weight_cent = 0.0001
 
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)
     
-    criterion_cent = CenterLoss(num_classes=len(label_map.keys()), feat_dim=512)
-
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    optimizer_centloss = torch.optim.SGD(criterion_cent.parameters(), lr=args.lr)
 
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
+
+    loss_criterion = RTFM_loss(alpha=0.0001, margin=100)
 
     prompt_text = get_prompt_text(label_map)
     ap_best = 0
@@ -94,21 +107,27 @@ def train(model, train_loader, test_loader, args, label_map: dict, device): # v=
         loss_total1 = 0
         loss_total2 = 0
         loss_total3 = 0
-        loss_total_cent = 0
+        loss_total_rtfm = 0
         loss_total_fusion = 0
         total_loss = 0
 
-        with tqdm(total=len(train_loader), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
-            for i, item in enumerate(train_loader):
-                visual_feat, text_labels, feat_lengths, cap_feature, cap_length, _, _, _  = item
-                visual_feat = visual_feat.to(device)
-                cap_feature = cap_feature.to(device)
-                feat_lengths = feat_lengths.to(device)
-                cap_length = cap_length.to(device)
+        normal_iter = iter(normal_loader)
+        anomaly_iter = iter(anomaly_loader)
 
-                text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
+        with tqdm(total=min(len(normal_loader), len(anomaly_loader)), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
+            for i in range(min(len(normal_loader), len(anomaly_loader))):
+                normal_features, normal_label, normal_lengths, normal_cap_features, normal_cap_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([batch, 256, 512])
+                anomaly_features, anomaly_label, anomaly_lengths, anomaly_cap_features, anomaly_cap_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([batch, 256, 512])
 
-                text_features, logits1, logits2, vis_feat, cap_feat = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
+                visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # batch,256,1024
+                cap_features = torch.cat([normal_cap_features, anomaly_cap_features], dim=0).to(device) # add idea6-3
+
+                text_labels = list(normal_label) + list(anomaly_label)
+                feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
+                cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
+                text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (batch, 7)
+
+                text_features, logits1, logits2, vis_feat, cap_feat = model(visual_features, cap_features, None, prompt_text, feat_lengths, cap_feat_lengths) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -124,31 +143,32 @@ def train(model, train_loader, test_loader, args, label_map: dict, device): # v=
                 loss3 = loss3 / 6
                 loss_total3 += loss3.item()
 
-                loss_fusion = fusion_loss(vis_feat, cap_feat, feat_lengths, cap_length, device)
+                loss_fusion = fusion_loss(vis_feat, cap_feat, feat_lengths, cap_feat_lengths, device)
                 loss_total_fusion += loss_fusion.item()
 
-                # loss_cent = criterion_cent(fuse_features.mean(dim=1), torch.argmax(text_labels, dim=1))
-                # loss_cent *= weight_cent
-                # loss_total_cent += loss_cent.item()
+                # 정상/이상 분리
+                feat_n = vis_feat[:vis_feat.shape[0]//2]  # (batch//2, 256, 512)
+                feat_a = vis_feat[vis_feat.shape[0]//2:]  # (batch//2, 256, 512)
 
-                loss = loss1 + loss2 + loss3 + loss_fusion
+                # RTFM 손실 계산
+                loss_rtfm = loss_criterion(feat_n, feat_a, loss1)
+                loss_total_rtfm += loss_rtfm.item()
+
+                loss = loss1 + loss2 + loss3 + loss_fusion + loss_rtfm * 0.1
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
-                # optimizer_centloss.zero_grad()
 
                 loss.backward()
                 optimizer.step()
-                # for param in criterion_cent.parameters():
-                #     param.grad.data *= (1. / weight_cent)
-                # optimizer_centloss.step()
 
                 # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    loss_fusion=f"{(loss_total_fusion / (i+1)):.4f}",  # 새로운 손실 추가
+                    loss_fusion=f"{(loss_total_fusion / (i+1)):.4f}",
+                    loss_rtfm=f"{(loss_total_rtfm / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
                 pbar.update(1)
@@ -157,15 +177,19 @@ def train(model, train_loader, test_loader, args, label_map: dict, device): # v=
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
+            epoch_loss_rtfm = loss_total_rtfm / (i+1)
             epoch_loss_fusion = loss_total_fusion / (i+1)
             epoch_loss_total = total_loss / (i+1)
             
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
+            writer.add_scalar('loss_rtfm/train', epoch_loss_rtfm, e)
             writer.add_scalar('loss_fusion/train', epoch_loss_fusion, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_fusion: {epoch_loss_fusion:.4f}, loss_total: {epoch_loss_total:.4f}')
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, '
+                  f'loss_rtfm: {epoch_loss_rtfm:.4f}, loss_fusion: {epoch_loss_fusion:.4f}, loss_total: {epoch_loss_total:.4f}')
+            
             AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
@@ -207,11 +231,13 @@ if __name__ == '__main__':
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
 
-    train_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, using_caption=args.using_caption)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    normal_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, True, using_caption=args.using_caption)
+    normal_loader = DataLoader(normal_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    anomaly_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, False, using_caption=args.using_caption)
+    anomaly_loader = DataLoader(anomaly_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
 
     test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
-    train(model, train_loader, test_loader, args, label_map, device)
+    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)

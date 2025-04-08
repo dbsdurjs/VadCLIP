@@ -102,7 +102,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         anomaly_iter = iter(anomaly_loader)
         
         with tqdm(total=min(len(normal_loader), len(anomaly_loader)), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
-
             for i in range(min(len(normal_loader), len(anomaly_loader))):
                 normal_features, normal_label, normal_lengths, normal_cap_features, normal_cap_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
                 anomaly_features, anomaly_label, anomaly_lengths, anomaly_cap_features, anomaly_cap_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
