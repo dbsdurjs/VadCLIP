@@ -51,7 +51,7 @@ class Transformer(nn.Module):
         super().__init__()
         self.width = width
         self.layers = layers
-        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(896, heads, attn_mask) for _ in range(layers)])
+        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask) for _ in range(layers)])
 
     def forward(self, x: torch.Tensor):
         return self.resblocks(x)
@@ -71,9 +71,9 @@ class Attentionfusion(nn.Module):   # add idea6-3
         self.linear_transform = nn.Linear(1024, 512) # add idea66-1
 
         self.ffn = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(1792, 512 * 4)),
+            ("c_fc", nn.Linear(1024, 512 * 4)),
             ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(512 * 4, 512))
+            ("c_proj", nn.Linear(512 * 4, 1024))
         ]))
 
     def forward(self, caption_feat, visual_feat):
@@ -123,14 +123,27 @@ class CLIPVAD(nn.Module):
         self.prompt_postfix = prompt_postfix
         self.device = device
 
-        self.temporal = Transformer(
+        self.temporal_vis = Transformer(
             width=visual_width,
             layers=visual_layers,
             heads=visual_head,
             attn_mask=self.build_attention_mask(self.attn_window)
         )
 
-        self.temporal2 = Transformer(
+        self.temporal_cap = Transformer(
+            width=visual_width,
+            layers=visual_layers,
+            heads=visual_head,
+            attn_mask=self.build_attention_mask(self.attn_window)
+        )
+
+        self.temporal2_cap = Transformer(
+            width=visual_width,
+            layers=visual_layers,
+            heads=visual_head
+        )
+
+        self.temporal2_vis = Transformer(
             width=visual_width,
             layers=visual_layers,
             heads=visual_head
@@ -150,12 +163,9 @@ class CLIPVAD(nn.Module):
             ("gelu", QuickGELU()),
             ("c_proj", nn.Linear(visual_width * 4, visual_width))
         ]))
-        self.mlp2 = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(visual_width, visual_width * 4)),
-            ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(visual_width * 4, visual_width))
-        ]))
-        self.classifier = nn.Linear(visual_width, 1)
+
+        self.temp = nn.Linear(1024, 512)
+        self.classifier = nn.Linear(512, 1)
 
         self.clipmodel, _ = clip.load("ViT-B/16", device)
         for clip_param in self.clipmodel.parameters():
@@ -167,21 +177,13 @@ class CLIPVAD(nn.Module):
 
         self.caption_mlp = nn.Linear(1024, 512)
         self.img_mlp = nn.Linear(1024, 512)
-        self.fusionattn = Attentionfusion(fusion_dim=896, num_heads=8)
-
-        self.feat1 = nn.Conv1d(512, 128, kernel_size=3, stride=1, dilation=1, padding=1, bias=False)
-        self.feat2 = nn.Conv1d(512, 128, kernel_size=3, stride=1, dilation=2, padding=2, bias=False)
-        self.feat3 = nn.Conv1d(512, 128, kernel_size=3, stride=1, dilation=3, padding=3, bias=False)
-		
+        self.fusionattn = Attentionfusion(fusion_dim=512, num_heads=8)
         self.initialize_parameters()
 
     def initialize_parameters(self):
         nn.init.normal_(self.text_prompt_embeddings.weight, std=0.01)
         nn.init.normal_(self.frame_position_embeddings.weight, std=0.01)
         nn.init.normal_(self.caption_embeddings.weight, std=0.01)
-        nn.init.normal_(self.feat1.weight, std=0.01)
-        nn.init.normal_(self.feat2.weight, std=0.01)
-        nn.init.normal_(self.feat3.weight, std=0.01)
 
     def build_attention_mask(self, attn_window):
         # lazily create causal attention mask, with full attention between the vision tokens
@@ -285,32 +287,33 @@ class CLIPVAD(nn.Module):
 
         return img_feat
     
-    def dtp(self, x): # (batch, 256, 512)
-        x0 = torch.transpose(x, 1, 2) # (batch, 512, 256)
-        x_t = x.transpose(1, 2)
-        x1 = self.feat1(x_t) # (64, 128, 256)
-        x2 = self.feat2(x_t) # (64, 128, 256)
-        x3 = self.feat3(x_t) # (64, 128, 256)
+    # def local_attn(self, x):
+    #     x = x.permute(1, 0, 2)
+    #     x, _ = self.temporal((x, None))    # local module(clip img features)
+        
+    #     return x
+    
+    # def global_attn(self, x):
+    #     x, _ = self.temporal2((x, None))    # local module(clip img features)
 
-        x = torch.cat((x0, x1, x2, x3), dim=1) # (64, 896, 256)
-
-        return x.transpose(1, 2)
-
-    def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):
-        caption_feat = self.task_caption(captioning)
+    #     return x
+    
+    def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths):       
+        caption_feat = self.task_caption(captioning) # (b, 256, 512)
         # caption_feat = self.encode_video(captioning, padding_mask, cap_lengths)
         visual_feat = self.task_img(visual)
 
-        local_cap_feat = self.dtp(caption_feat)
-        local_vis_feat = self.dtp(visual_feat)
+        local_cap_feat, _ = self.temporal_cap((caption_feat.permute(1, 0, 2), None)) # (256, b, 512)
+        local_vis_feat, _ = self.temporal_vis((visual_feat.permute(1, 0, 2), None)) # (256, b, 512)
 
-        global_cap_feat, _ = self.temporal2((local_cap_feat, None))
-        global_vis_feat, _ = self.temporal2((local_vis_feat, None))
+        global_cap_feat, _ = self.temporal2_cap((local_cap_feat.permute(1, 0, 2), None))
+        global_vis_feat, _ = self.temporal2_vis((local_vis_feat.permute(1, 0, 2), None))
 
         # visual_features = self.encode_video(visual, padding_mask, lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256, 512])
         fusion_feat = self.fusionattn(global_cap_feat, global_vis_feat) # add idea6-3
+        fusion_feat = self.temp(fusion_feat)
 
-        logits1 = self.classifier(fusion_feat + self.mlp2(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
+        logits1 = self.classifier(fusion_feat + self.mlp1(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
 
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
 
@@ -318,18 +321,18 @@ class CLIPVAD(nn.Module):
         logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256)
         visual_attn = logits_attn @ fusion_feat # aggregate(visual features, logits1), (batch, 1, 512)
         visual_attn = visual_attn / visual_attn.norm(dim=-1, keepdim=True)  # aggregate(visual features, logits1)
-        visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])    # (batch, 14, 512)
+        visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])    # (batch, 7, 512)
         
-        text_features = text_features_ori.unsqueeze(0)  # (1, 14, 512)
-        text_features = text_features.expand(visual_attn.shape[0], text_features.shape[1], text_features.shape[2]) # (batch, 14, 512)
+        text_features = text_features_ori.unsqueeze(0)  # (1, 7, 512)
+        text_features = text_features.expand(visual_attn.shape[0], text_features.shape[1], text_features.shape[2]) # (batch, 7, 512)
         text_features = text_features + visual_attn # visual prompt(vision + Text)
-        text_features = text_features + self.mlp1(text_features) # label features = visual prompt(ffn(text features) + text features), (batch, 14, 512)
+        text_features = text_features + self.mlp1(text_features) # label features = visual prompt(ffn(text features) + text features), (batch, 7, 512)
         
         visual_features_norm = fusion_feat / fusion_feat.norm(dim=-1, keepdim=True) # (batch, 256, 512)
         text_features_norm = text_features / text_features.norm(dim=-1, keepdim=True)
-        text_features_norm = text_features_norm.permute(0, 2, 1)    # (batch, 512, 14)
+        text_features_norm = text_features_norm.permute(0, 2, 1)    # (batch, 512, 7)
         
-        logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 14)
+        logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 7)
 
         return text_features_ori, logits1, logits2, visual_feat, caption_feat
     
