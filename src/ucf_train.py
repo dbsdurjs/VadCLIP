@@ -61,21 +61,6 @@ def fusion_loss(visual_features, caption_features, lengths, cap_lengths, device)
     cap_mean = cap_mean / (cap_mean.norm(dim=-1, keepdim=True))  # (128, 512)
     loss = F.mse_loss(vis_mean, cap_mean)
     return loss
-
-# RTFM 손실 클래스 정의
-class RTFM_loss(nn.Module):
-    def __init__(self, alpha, margin):
-        super(RTFM_loss, self).__init__()
-        self.alpha = alpha
-        self.margin = margin
-
-    def forward(self, feat_n, feat_a, loss1):
-        loss_cls = loss1
-        loss_abn = torch.abs(self.margin - torch.norm(torch.mean(feat_a, dim=1), p=2, dim=1))
-        loss_nor = torch.norm(torch.mean(feat_n, dim=1), p=2, dim=1)
-        loss_rtfm = torch.mean((loss_abn + loss_nor) ** 2)
-        loss_total = loss_cls + self.alpha * loss_rtfm
-        return loss_total
     
 def train(model, normal_loader, anomaly_loader, testloader, args, label_map, device):
     model.to(device)
@@ -84,7 +69,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)   # 클래스 gt(normal : A, Abuse, Arrest..)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    loss_criterion = RTFM_loss(alpha=0.0001, margin=100)
 
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
@@ -146,32 +130,14 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 
                 loss_fusion = fusion_loss(vis_feat, cap_feat, feat_lengths, cap_feat_lengths, device)
                 loss_total_fusion += loss_fusion.item()
-
-                # 정상/이상 분리
-                feat_n = vis_feat[:vis_feat.shape[0]//2]  # (batch//2, 256, 512)
-                feat_a = vis_feat[vis_feat.shape[0]//2:]  # (batch//2, 256, 512)
-
-                # RTFM 손실 계산
-                loss_rtfm = loss_criterion(feat_n, feat_a, loss1)
-                loss_total_rtfm += loss_rtfm.item()
                 
-                loss = loss1 + loss2 + loss3 + loss_fusion + loss_rtfm * 0.1
+                loss = loss1 + loss2 + loss3 + loss_fusion
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
 
                 loss.backward()
                 optimizer.step()
-
-                # tqdm 업데이트 및 정보 추가
-                pbar.set_postfix(
-                    loss1=f"{(loss_total1 / (i+1)):.4f}",
-                    loss2=f"{(loss_total2 / (i+1)):.4f}",
-                    loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    loss_fusion=f"{(loss_total_fusion / (i+1)):.4f}",  # 새로운 손실 추가
-                    loss_total=f"{(total_loss / (i+1)):.4f}"
-                )
-                pbar.update(1)
 
              # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
@@ -188,18 +154,15 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            epoch_loss_rtfm = loss_total_rtfm / (i+1)
             epoch_loss_fusion = loss_total_fusion / (i+1)
             epoch_loss_total = total_loss / (i+1)
             
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            writer.add_scalar('loss_rtfm/train', epoch_loss_rtfm, e)
             writer.add_scalar('loss_fusion/train', epoch_loss_fusion, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, '
-                  f'loss_rtfm: {epoch_loss_rtfm:.4f}, loss_fusion: {epoch_loss_fusion:.4f}, loss_total: {epoch_loss_total:.4f}')
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_fusion: {epoch_loss_fusion:.4f}, loss_total: {epoch_loss_total:.4f}')
 
             AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
