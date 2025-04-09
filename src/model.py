@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch import nn
 from clip import clip
 from utils.layers import GraphConvolution, DistanceAdj
+from collections import OrderedDict
 
 class LayerNorm(nn.LayerNorm):
 
@@ -94,7 +95,60 @@ class Attentionfusion(nn.Module):   # add idea6-3
         enhance_vis_feat = self.ffn(fusion_feat)
 
         return enhance_vis_feat
-    
+
+class CrossAttentionFusion(nn.Module):
+    def __init__(self, fusion_dim=512, num_heads=8, dropout=0.1, cross_attn_depth=1):
+        super(CrossAttentionFusion, self).__init__()
+        # 캡션 → 시각 Cross Attention
+        self.cross_attn_cap = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads, dropout=dropout)
+        # 시각 → 캡션 Cross Attention
+        self.cross_attn_vis = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads, dropout=dropout)
+        
+        # LayerNorm
+        self.norm_cap = nn.LayerNorm(fusion_dim)
+        self.norm_vis = nn.LayerNorm(fusion_dim)
+
+        self.cross_attn_layers = nn.ModuleList([])
+        for _ in range(cross_attn_depth):
+            self.cross_attn_layers.append(nn.ModuleList([
+                self.cross_attn_cap,
+                self.cross_attn_vis,
+                self.norm_cap,
+                self.norm_vis
+            ]))
+
+    def forward(self, caption_feat, visual_feat):
+        # Shape: (batch, 256, 512) for both caption_feat and visual_feat
+        
+        for c_to_v, v_to_c, norm_c, norm_v in self.cross_attn_layers:
+            # 대표 토큰: 평균값 사용
+            cap_class = caption_feat.mean(dim=1)  # (batch, 512) - 시퀀스 차원(256)을 평균
+            vis_class = visual_feat.mean(dim=1)   # (batch, 512) - 시퀀스 차원(256)을 평균
+            cap_patches = caption_feat  # 평균 대신 전체 시퀀스를 패치로 사용
+            vis_patches = visual_feat   # 평균 대신 전체 시퀀스를 패치로 사용
+
+            # 캡션 → 시각 Cross Attention
+            cap_query = c_to_v(cap_class.unsqueeze(1))  # (batch, 1, 512)
+            cap_out, _ = self.cross_attn_cap(cap_query.transpose(0, 1), 
+                                            vis_patches.transpose(0, 1), 
+                                            vis_patches.transpose(0, 1))  # (1, batch, 512)
+            cap_out = cap_out.transpose(0, 1)  # (batch, 1, 512)
+            cap_out = norm_c(cap_out + cap_query)  # 잔차 연결
+
+            # 시각 → 캡션 Cross Attention
+            vis_query = v_to_c(vis_class.unsqueeze(1))  # (batch, 1, 512)
+            vis_out, _ = self.cross_attn_vis(vis_query.transpose(0, 1), 
+                                            cap_patches.transpose(0, 1), 
+                                            cap_patches.transpose(0, 1))  # (1, batch, 512)
+            vis_out = vis_out.transpose(0, 1)  # (batch, 1, 512)
+            vis_out = norm_v(vis_out + vis_query)  # 잔차 연결
+
+            # 융합 결과 생성
+            fusion_feat = visual_feat + self.ffn(self.dropout(cap_out + vis_out).expand_as(visual_feat))
+            # (batch, 1, 512)를 (batch, 256, 512)로 확장 후 원래 visual_feat에 더함
+
+        return fusion_feat
+
 class CLIPVAD(nn.Module):
     def __init__(self,
                  num_class: int,
