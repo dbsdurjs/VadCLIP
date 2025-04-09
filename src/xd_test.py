@@ -125,8 +125,8 @@ if __name__ == '__main__':
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
     model_param = torch.load(args.model_path)
-    model_param = torch.load(args.checkpoint_path) # add
-    model_param = model_param['model_state_dict'] # add
+    # model_param = torch.load(args.checkpoint_path) # add
+    # model_param = model_param['model_state_dict'] # add
     model.load_state_dict(model_param)
 
     test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
