@@ -75,6 +75,9 @@ class Attentionfusion(nn.Module):   # add idea6-3
         ]))
 
     def forward(self, caption_feat, visual_feat):
+        caption_feat = caption_feat.permute(1, 0, 2)
+        visual_feat = visual_feat.permute(1, 0, 2)
+
         caption_input, _ = self.self_attn(caption_feat, caption_feat, caption_feat)
         caption_output = self.residual_layer1(caption_input + caption_feat)
         caption_output = self.dropout1(caption_output)
@@ -94,7 +97,7 @@ class Attentionfusion(nn.Module):   # add idea6-3
         fusion_feat = fusion_vis_output + fusion_cap_output
         enhance_vis_feat = self.ffn(fusion_feat)
 
-        return enhance_vis_feat
+        return enhance_vis_feat.permute(1, 0, 2)
 
 class CrossAttentionFusion(nn.Module):
     def __init__(self, fusion_dim=512, num_heads=8, dropout=0.1, cross_attn_depth=1):
