@@ -129,7 +129,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 loss_fusion = fusion_loss(vis_feat, cap_feat, feat_lengths, cap_feat_lengths, device)
                 loss_total_fusion += loss_fusion.item()
 
-                loss = loss1 + loss2 + loss3 + loss_fusion
+                loss = loss1 + loss2*0.1 + loss3 + loss_fusion
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -210,5 +210,5 @@ if __name__ == '__main__':
     test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
+    model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, args.batch_size, device)
     train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
