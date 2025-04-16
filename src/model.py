@@ -321,7 +321,7 @@ class CLIPVAD(nn.Module):
 
         text_features = self.clipmodel.encode_text(text_embeddings, text_tokens)    # (14,512)
 
-        return text_featuress
+        return text_features
 
     def encode_caption(self, caption, cls_token_cap):
         caption = caption.to(torch.float) # (batch size, 256, 512)
