@@ -67,15 +67,33 @@ class UCFDataset(data.Dataset):
         return clip_feature, clip_label, clip_length, clip_cap_feature, clip_cap_length, base_file, video_path, video_fps
 
 class XDDataset(data.Dataset):
-    def __init__(self, clip_dim: int, file_path: str, file_path_cap: str, test_mode: bool, label_map: dict, using_caption: bool = False):
+    def __init__(self, clip_dim: int, file_path: str, file_path_cap: str, test_mode: bool, label_map: dict, normal: bool = False, using_caption: bool = False):
         self.df = pd.read_csv(file_path)
         self.df_cap = pd.read_csv(file_path_cap)
         self.clip_dim = clip_dim
         self.test_mode = test_mode
         self.label_map = label_map
-
+        self.normal = normal
         self.using_caption = using_caption
         print(f'captioning 사용여부 : {self.using_caption}')
+
+        # add
+        if normal == True and test_mode == False:
+            # 정상 데이터만 선택 ('A' 레이블)
+            self.df = self.df.loc[self.df['label'] == 'A']
+            self.df_cap = self.df_cap.loc[self.df_cap['label'] == 'A']
+            
+            # 인덱스 재설정
+            self.df = self.df.reset_index(drop=True)
+            self.df_cap = self.df_cap.reset_index(drop=True)
+        elif test_mode == False:
+            # 이상 데이터만 선택 ('A' 제외)
+            self.df = self.df.loc[self.df['label'] != 'A']
+            self.df_cap = self.df_cap.loc[self.df_cap['label'] != 'A']
+
+            # 인덱스 재설정
+            self.df = self.df.reset_index(drop=True)
+            self.df_cap = self.df_cap.reset_index(drop=True)
         
     def __len__(self):
         return self.df.shape[0]
@@ -86,7 +104,6 @@ class XDDataset(data.Dataset):
         base_file = os.path.basename(clip_path)
         video_path = os.path.dirname(clip_path)
         video_fps = 30
-        alpha = 0.3
         
         if self.using_caption:
             base_video_name = base_file.rsplit('__', 1)[0]
@@ -99,8 +116,6 @@ class XDDataset(data.Dataset):
             cap_path = matching_rows.iloc[0]['path']
             clip_cap_feature = np.load(cap_path)
             
-            # clip_cap_feature = clip_feature + alpha * clip_cap_feature
-
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
             clip_cap_feature, clip_cap_length = tools.process_feat(clip_cap_feature, self.clip_dim)

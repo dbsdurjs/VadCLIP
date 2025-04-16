@@ -48,18 +48,14 @@ def CLAS2(logits, labels, lengths, device):
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (96), labels (96)
     return clsloss
 
-def train(model, train_loader, test_loader, args, label_map: dict, device):
+def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
     model.to(device)
-    weight_cent = 0.0001
 
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)
     
-    criterion_cent = CenterLoss(num_classes=len(label_map.keys()), feat_dim=512)
-
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    optimizer_centloss = torch.optim.SGD(criterion_cent.parameters(), lr=args.lr)
 
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
 
@@ -81,20 +77,25 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
         loss_total1 = 0
         loss_total2 = 0
         loss_total3 = 0
-        loss_total_cent = 0
         total_loss = 0
 
-        with tqdm(total=len(train_loader), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
-            for i, item in enumerate(train_loader):
-                visual_feat, text_labels, feat_lengths, cap_feature, cap_length, _, _, _  = item
-                visual_feat = visual_feat.to(device)
-                cap_feature = cap_feature.to(device)
-                feat_lengths = feat_lengths.to(device)
-                cap_length = cap_length.to(device)
+        normal_iter = iter(normal_loader)
+        anomaly_iter = iter(anomaly_loader)
 
-                text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device)
+        with tqdm(total=min(len(normal_loader), len(anomaly_loader)), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
+            for i in range(min(len(normal_loader), len(anomaly_loader))):
+                normal_features, normal_label, normal_lengths, normal_cap_features, normal_cap_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([batch, 256, 512])
+                anomaly_features, anomaly_label, anomaly_lengths, anomaly_cap_features, anomaly_cap_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([batch, 256, 512])
 
-                text_features, logits1, logits2 = model(visual_feat, cap_feature, None, prompt_text, feat_lengths, cap_length) 
+                visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # batch,256,1024
+                cap_features = torch.cat([normal_cap_features, anomaly_cap_features], dim=0).to(device) # add idea6-3
+
+                text_labels = list(normal_label) + list(anomaly_label)
+                feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
+                cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
+                text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (batch, 7)
+
+                text_features, logits1, logits2 = model(visual_features, cap_features, None, prompt_text, feat_lengths, cap_feat_lengths) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -110,44 +111,35 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
                 loss3 = loss3 / 6
                 loss_total3 += loss3.item()
 
-                # loss_cent = criterion_cent(fuse_features.mean(dim=1), torch.argmax(text_labels, dim=1))
-                # loss_cent *= weight_cent
-                # loss_total_cent += loss_cent.item()
-
-                loss = loss1 + loss2 + loss3
+                loss = loss1 + loss2*0.1 + loss3
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
-                # optimizer_centloss.zero_grad()
 
                 loss.backward()
                 optimizer.step()
-                # for param in criterion_cent.parameters():
-                #     param.grad.data *= (1. / weight_cent)
-                # optimizer_centloss.step()
 
                 # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    # loss_cent=f"{(loss_total_cent / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
                 pbar.update(1)
-            # 에포크 손실값 평균 계산 후 TensorBoard에 기록
+
+            # 에포크 손실 기록
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            # epoch_loss_cent = loss_total_cent / (i+1)
             epoch_loss_total = total_loss / (i+1)
+            
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            # writer.add_scalar('loss_cent/train', epoch_loss_cent, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_total: {epoch_loss_total:.4f}') # , loss_cent: {epoch_loss_cent:.4f}
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_total: {epoch_loss_total:.4f}')
+            
             AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
@@ -165,6 +157,7 @@ def train(model, train_loader, test_loader, args, label_map: dict, device):
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'ap': ap_best}
+                print('change the best')
                 torch.save(checkpoint, args.checkpoint_path)
 
             scheduler.step()
@@ -189,11 +182,13 @@ if __name__ == '__main__':
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
 
-    train_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, using_caption=args.using_caption)
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    normal_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, True, using_caption=args.using_caption)
+    normal_loader = DataLoader(normal_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
+    anomaly_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, False, using_caption=args.using_caption)
+    anomaly_loader = DataLoader(anomaly_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
 
     test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, device)
-    train(model, train_loader, test_loader, args, label_map, device)
+    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
