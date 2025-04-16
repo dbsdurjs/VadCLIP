@@ -321,7 +321,7 @@ class CLIPVAD(nn.Module):
 
         text_features = self.clipmodel.encode_text(text_embeddings, text_tokens)    # (14,512)
 
-        return text_features
+        return text_featuress
 
     def encode_caption(self, caption, cls_token_cap):
         caption = caption.to(torch.float) # (batch size, 256, 512)
@@ -330,7 +330,7 @@ class CLIPVAD(nn.Module):
         frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 512)
         cls_token_cap = torch.cat((cls_token_cap, caption), dim=1) # add cls token
         caption_feat = frame_position_embeddings + cls_token_cap
-
+        
         # x = self.transformer_encoder(caption_feat)
 
         return caption_feat
