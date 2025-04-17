@@ -38,7 +38,6 @@ class UCFDataset(data.Dataset):
         base_file = os.path.basename(clip_path)
         video_path = os.path.dirname(clip_path)
         video_fps = 30
-        alpha = 0.3
         
         if self.using_caption:
             base_video_name = base_file.split('__')[0]
@@ -121,11 +120,11 @@ class XDDataset(data.Dataset):
 
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
-            clip_cap_feature, clip_cap_length = tools.process_feat(clip_cap_feature, self.clip_dim)
+            clip_cap_feature, clip_cap_length = tools.process_feat(clip_cap_feature, self.clip_dim//2)
 
         else:
             clip_feature, clip_length = tools.process_split(clip_feature, self.clip_dim)
-            clip_cap_feature, clip_cap_length = tools.process_split(clip_cap_feature, self.clip_dim)
+            clip_cap_feature, clip_cap_length = tools.process_split(clip_cap_feature, self.clip_dim//2)
         
         clip_feature = torch.tensor(clip_feature).float()
         clip_cap_feature = torch.tensor(clip_cap_feature).float()

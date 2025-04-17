@@ -251,13 +251,13 @@ class CLIP(nn.Module):
                  # text
                  context_length: int,
                  vocab_size: int,
-                 transformer_width: int,
+                 transformer_width: int, # 512
                  transformer_heads: int,
                  transformer_layers: int
                  ):
         super().__init__()
 
-        self.context_length = context_length
+        self.context_length = context_length # 77
 
         if isinstance(vision_layers, (tuple, list)):
             vision_heads = vision_width * 32 // 64
@@ -288,7 +288,7 @@ class CLIP(nn.Module):
 
         self.vocab_size = vocab_size
         self.token_embedding = nn.Embedding(vocab_size, transformer_width)  # vocab size 는 input 최대 원소 값보다 커야함
-        self.positional_embedding = nn.Parameter(torch.empty(self.context_length, transformer_width))
+        self.positional_embedding = nn.Parameter(torch.empty(self.context_length, transformer_width)) # 77, 512
         self.ln_final = LayerNorm(transformer_width)
         
         self.text_projection = nn.Parameter(torch.empty(transformer_width, embed_dim))
@@ -356,21 +356,6 @@ class CLIP(nn.Module):
         # take features from the eot embedding (eot_token is the highest number in each sequence)
         x = x[torch.arange(x.shape[0]), token.argmax(dim=-1)] @ self.text_projection    # 최종 learnable prompt 생성
 
-        return x
-    
-    def encode_text_cap(self, text): # 기존 CLIP encode_text 코드(여기선 caption feature 추출)
-        # text.shape (batch size, 77)
-        x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model], (batch size, 77, 512)
-        x = x + self.positional_embedding.type(self.dtype)
-        x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.transformer(x)
-        x = x.permute(1, 0, 2)  # LND -> NLD
-        x = self.ln_final(x).type(self.dtype)
-
-        # x.shape = [batch_size, n_ctx, transformer.width]
-        # take features from the eot embedding (eot_token is the highest number in each sequence)
-        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
-        # print('final', x.shape)
         return x
 
     def forward(self, image, text):

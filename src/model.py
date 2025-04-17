@@ -198,6 +198,14 @@ class CLIPVAD(nn.Module):
             attn_mask=self.build_attention_mask(self.attn_window)
         )
 
+        self.caption_transformer = Transformer(
+            width=visual_width, # 512
+            layers=visual_layers, # ucf-2
+            heads=visual_head,
+            attn_mask=self.build_attention_mask_caption()
+        )
+        self.ln_final = LayerNorm(self.visual_width)
+
         width = int(visual_width / 2)
         self.gc1 = GraphConvolution(visual_width, width, residual=True)
         self.gc2 = GraphConvolution(width, width, residual=True)
@@ -222,9 +230,10 @@ class CLIPVAD(nn.Module):
             clip_param.requires_grad = False
 
         self.frame_position_embeddings = nn.Embedding(visual_length+1, visual_width)
-        self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
-        self.caption_embeddings = nn.Embedding(visual_length+1, visual_width) # add idea66-6
+        self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim) # (77, 512)
+        self.caption_prompt_embeddings = nn.Embedding(128, self.embed_dim) # (128, 512)
         
+        self.caption_temp = nn.Linear(256, 128)
         self.encoder_layer = nn.TransformerEncoderLayer(d_model=visual_width, nhead=8)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=2)
 
@@ -238,7 +247,6 @@ class CLIPVAD(nn.Module):
     def initialize_parameters(self):
         nn.init.normal_(self.text_prompt_embeddings.weight, std=0.01)
         nn.init.normal_(self.frame_position_embeddings.weight, std=0.01)
-        nn.init.normal_(self.caption_embeddings.weight, std=0.01)
 
     def build_attention_mask(self, attn_window):
         # lazily create causal attention mask, with full attention between the vision tokens
@@ -251,6 +259,15 @@ class CLIPVAD(nn.Module):
             else:
                 mask[i * attn_window: self.visual_length, i * attn_window: self.visual_length] = 0
 
+        return mask
+
+    def build_attention_mask_caption(self):
+        # lazily create causal attention mask, with full attention between the vision tokens
+        # pytorch uses additive attention mask; fill with -inf
+        mask = torch.empty(self.visual_length, self.visual_length)
+        mask.fill_(float("-inf"))
+        mask.triu_(1)  # zero out the lower diagonal
+        
         return mask
 
     def adj4(self, x, seq_len):
@@ -282,8 +299,9 @@ class CLIPVAD(nn.Module):
         position_ids = torch.arange(self.visual_length+1, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)    # (batch size,256+1)
         frame_position_embeddings = self.frame_position_embeddings(position_ids)    # (batch size, 256+1, 512)
-        cls_token_vis = cls_token_vis + frame_position_embeddings[:, 0].unsqueeze(1)
-        images = images.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (batch, 256+1, 512)
+        
+        cls_token_vis = cls_token_vis + frame_position_embeddings[:, 0].unsqueeze(1) # (batch, 1, 512)
+        images = images.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (batch, 256, 512)
 
         x, _ = self.temporal((images, None))    # local module(clip img features)
         x = x.permute(1, 0, 2)
@@ -306,7 +324,7 @@ class CLIPVAD(nn.Module):
     def encode_textprompt(self, text):
         word_tokens = clip.tokenize(text).to(self.device)   # 클래스 토큰 생성, tokenizer(label), (14,77)
         word_embedding = self.clipmodel.encode_token(word_tokens)   # 클래스 토큰 임베딩, (14,77,512)
-        text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])  # (14,77,512)
+        text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])  # (len(text), 77, 512)
         text_tokens = torch.zeros(len(text), 77).to(self.device)    # (14, 77)
 
         for i in range(len(text)):
@@ -322,18 +340,24 @@ class CLIPVAD(nn.Module):
         text_features = self.clipmodel.encode_text(text_embeddings, text_tokens)    # (14,512)
 
         return text_features
-
+  
     def encode_caption(self, caption, cls_token_cap):
-        caption = caption.to(torch.float) # (batch size, 256, 512)
+        caption = self.caption_temp(caption.permute(0, 2, 1)).permute(0, 2, 1)
+        caption_embeddings = self.caption_prompt_embeddings(torch.arange(128).to(self.device)).unsqueeze(0).repeat([caption.shape[0], 1, 1]) # (len(text), 128, 512)
+        caption_embeddings = torch.cat((cls_token_cap, caption_embeddings, caption), dim=1) # (batch, 1, 512) + (batch, 128, 512) + (batch, 128, 512) = (batch, 257, 512)
+        
         position_ids = torch.arange(self.visual_length+1, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size, 256+1)
-        frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 512)
-        cls_token_cap = torch.cat((cls_token_cap, caption), dim=1) # add cls token
-        caption_feat = frame_position_embeddings + cls_token_cap
-        
-        # x = self.transformer_encoder(caption_feat)
+        frame_position_embeddings = self.frame_position_embeddings(position_ids)    # (batch size, 256+1, 512)
 
-        return caption_feat
+        cls_token_cap = caption_embeddings[:, 0].unsqueeze(1) + frame_position_embeddings[:, 0].unsqueeze(1) # (batch, 1, 512)
+        captions = caption_embeddings[:, 1:].permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
+
+        captions, _ = self.caption_transformer((captions, None)) # (256, batch, 512)
+        captions = self.ln_final(captions.permute(1, 0, 2)) # (batch, 256, 512)
+        captions = torch.cat((cls_token_cap, captions), dim=1) # (batch, 257, 512)
+
+        return captions
     
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths): 
         cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
