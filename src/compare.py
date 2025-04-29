@@ -12,15 +12,17 @@ def average_features(features, group_size=16):
         grouped_features.append(np.mean(group, axis=0).astype(np.float16))
     return np.array(grouped_features)
 
-if __name__ == '__main__':
+if __name__ == '__main__':# A.Beautiful.Mind.2001__#00-01-45_00-02-50_label_A
     # -------------------------------------------------------------------------------
-    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/all_ucfclip_caption_feature/Abuse/Abuse030_x264/Abuse030_x264.npy'
+    file1 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/all_ucfclip_caption_feature/Training_Normal_Videos_Anomaly/Normal_Videos308_x264/Normal_Videos308_x264.npy'
     file2 = '/home/yeogeon/YG_main/diffusion_model/VadCLIP/list/gt_label.npy'
+    file3 = '/home/yeogeon/YG_main/diffusion_model/VAD_dataset/XD-Violence/xd_caption_feature/1-1004/A.Beautiful.Mind.2001__#00-01-45_00-02-50_label_A/A.Beautiful.Mind.2001__#00-01-45_00-02-50_label_A.npy'
     
     data1 = np.load(file1, allow_pickle=True)
     data2 = np.load(file2, allow_pickle=True)
+    data3 = np.load(file3, allow_pickle=True)
 
-    print(data2.shape)
+    print(data1.shape)
     # print(data2.shape)
 
     # final_feature = average_features(data1, group_size=16)

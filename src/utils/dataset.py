@@ -44,7 +44,7 @@ class UCFDataset(data.Dataset):
             base_video_name = base_file.split('__')[0]
 
             matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
-                                    self.df_cap['path'].str.endswith(base_video_name + ".npy")]
+                                    self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro.npy")]
             if matching_rows.empty:
                 raise KeyError(f"No matching clip_cap_feature for video {base_video_name}")
             

@@ -55,49 +55,6 @@ class Transformer(nn.Module):
     def forward(self, x: torch.Tensor):
         return self.resblocks(x)
 
-class Attentionfusion(nn.Module):   # add idea6-3
-    def __init__(self, fusion_dim, num_heads):
-        super(Attentionfusion, self).__init__()
-
-        self.self_attn = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
-        self.residual_layer1 = nn.LayerNorm(fusion_dim)
-        self.dropout1 = nn.Dropout()
-
-        self.cross_attn = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads)
-        self.residual_layer2 = nn.LayerNorm(fusion_dim)
-        self.dropout2 = nn.Dropout()
-
-        self.ffn = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(512, 512 * 4)),
-            ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(512 * 4, 512))
-        ]))
-
-    def forward(self, caption_feat, visual_feat):
-        caption_feat = caption_feat.permute(1, 0, 2)
-        visual_feat = visual_feat.permute(1, 0, 2)
-
-        caption_input, _ = self.self_attn(caption_feat, caption_feat, caption_feat)
-        caption_output = self.residual_layer1(caption_input + caption_feat)
-        caption_output = self.dropout1(caption_output)
-
-        visual_input, _ = self.self_attn(visual_feat, visual_feat, visual_feat)
-        visual_output = self.residual_layer1(visual_input + visual_feat)
-        visual_output = self.dropout1(visual_output)
-
-        fusion_cap_feat, _ = self.cross_attn(caption_output, visual_output, visual_output)  # idea66-3
-        fusion_cap_output = self.residual_layer2(fusion_cap_feat + caption_output)
-        fusion_cap_output = self.dropout2(fusion_cap_output)
-
-        fusion_vis_feat, _ = self.cross_attn(visual_output, caption_output, caption_output)  # idea66-3
-        fusion_vis_output = self.residual_layer2(fusion_vis_feat + visual_output)
-        fusion_vis_output = self.dropout2(fusion_vis_output)
-
-        fusion_feat = fusion_vis_output + fusion_cap_output
-        enhance_vis_feat = self.ffn(fusion_feat)
-
-        return enhance_vis_feat.permute(1, 0, 2)
-
 class CrossAttentionFusion(nn.Module):
     def __init__(self, fusion_dim=512, num_heads=8, dropout=0.1, cross_attn_depth=1):
         super(CrossAttentionFusion, self).__init__()
