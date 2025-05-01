@@ -115,11 +115,11 @@ class CrossAttentionFusion(nn.Module):
             vis_out = attn_out_vis.permute(1, 0, 2) + vis_query
             fusion_vis = torch.cat((vis_patches, vis_out), dim=1)
 
-        caption_features = self.mlp_head_cap(fusion_cap)
-        visual_features = self.mlp_head_vis(fusion_vis)
+        caption_features = self.mlp_head_cap(fusion_cap) # batch, 257, 256
+        visual_features = self.mlp_head_vis(fusion_vis) # batch, 257, 256
 
-        fusion_features = caption_features + visual_features
-        fusion_features = self.mlp_head_fusion(fusion_features)
+        fusion_features = caption_features + visual_features # batch, 257, 256
+        fusion_features = self.mlp_head_fusion(fusion_features) # batch, 257, 512 + batch, 257, 512
 
         return fusion_features
 
@@ -298,12 +298,14 @@ class CLIPVAD(nn.Module):
         position_ids = torch.arange(self.visual_length+1, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size, 256+1)
         frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 512)
-        cls_token_cap = torch.cat((cls_token_cap, caption), dim=1) # add cls token
-        caption_feat = frame_position_embeddings + cls_token_cap
         
-        # x = self.transformer_encoder(caption_feat)
+        cls_token_cap = cls_token_cap + frame_position_embeddings[:, 0].unsqueeze(1)
+        caption_feat = caption.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (batch, 256, 512)
+        
+        x = self.transformer_encoder(caption_feat) # cls token 제외 encoder 입력
+        x = torch.cat((cls_token_cap, x.permute(1, 0, 2)), dim=1)
 
-        return caption_feat
+        return x
     
     def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths): 
         cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
@@ -314,6 +316,7 @@ class CLIPVAD(nn.Module):
 
         fusion_feat = self.crossfusion(caption_features, visual_features)
 
+        fusion_feat += visual_features
         logits1 = self.classifier(fusion_feat + self.mlp1(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
 
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
