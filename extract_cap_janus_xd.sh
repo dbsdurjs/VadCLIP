@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=1 python src/extract_cap_janus_xd.py --img-folder='../VAD_dataset/XD-Violence/Extracted_Frames'

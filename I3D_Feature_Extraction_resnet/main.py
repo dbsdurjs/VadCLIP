@@ -2,7 +2,6 @@ from pathlib import Path
 import shutil
 import argparse
 import numpy as np
-import time
 import ffmpeg
 import torch
 import torch.nn as nn
@@ -28,13 +27,10 @@ def generate(datasetpath, outputpath, pretrainedpath, frequency, batch_size, sam
 	i3d.train(False)  # Set model to evaluate mode
 	for video in videos:
 		videoname = video.split("/")[-1].rsplit(".", 1)[0]
-		startime = time.time()
 		print("Generating for {0}".format(video))
 		Path(temppath).mkdir(parents=True, exist_ok=True)
 		ffmpeg.input(video).output('{}%d.jpg'.format(temppath),start_number=0).global_args('-loglevel', 'quiet').run()
-		print("Preprocessing done..")
 		features = run(i3d, frequency, temppath, batch_size, sample_mode)
-		print("Obtained features of size: ", features.shape)
 
 		# sample_mode에 따라 저장 방식을 분기
 		if sample_mode == 'oversample':
@@ -50,15 +46,14 @@ def generate(datasetpath, outputpath, pretrainedpath, frequency, batch_size, sam
 			np.save(output_file, features[:, 0, :])
 
 		shutil.rmtree(temppath)
-		print("done in {0}.".format(time.time() - startime))
 
 if __name__ == '__main__': 
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--datasetpath', type=str, default="../VAD_dataset/XD-Violence/train_videos/")
-	parser.add_argument('--outputpath', type=str, default="../VAD_dataset/XDClipFeatures_I3D/")
+	parser.add_argument('--datasetpath', type=str, default=None)
+	parser.add_argument('--outputpath', type=str, default=None)
 	parser.add_argument('--pretrainedpath', type=str, default="./I3D_Feature_Extraction_resnet/pretrained/i3d_r50_kinetics.pth")
 	parser.add_argument('--frequency', type=int, default=16)
-	parser.add_argument('--batch_size', type=int, default=128)
+	parser.add_argument('--batch_size', type=int, default=64)
 	parser.add_argument('--sample_mode', type=str, default="oversample")
 	args = parser.parse_args()
 	generate(args.datasetpath, str(args.outputpath), args.pretrainedpath, args.frequency, args.batch_size, args.sample_mode)    

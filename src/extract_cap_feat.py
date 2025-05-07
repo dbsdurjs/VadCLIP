@@ -1,61 +1,95 @@
 import os
+import json
 import torch
-from clip import clip
 import numpy as np
-from compare import average_features
+from clip import clip
+import argparse
+
+CUDA_VISIBLE_DEVICES=0
+def build_short_caption(cap: str, device: str, max_tokens: int = 77) -> str:
+    """
+    1) 온점(.)으로 문장 단위 분리
+    2) 각 문장을 tokenize(truncate=True)해서 실제 토큰 수 계산
+    3) 누적 토큰 수가 max_tokens 미만인 문장만 모아서 반환
+    """
+    sentences = [s.strip() for s in cap.split('.') if s.strip()]
+    kept, cum_tokens = [], 0
+
+    for sent in sentences:
+        # 토큰 수만 계산하기 위해 truncate=True
+        tokens = clip.tokenize([sent], truncate=True).to(device)  # (1,77)
+        tok_count = (tokens != 0).sum().item()                    # 실제 토큰 수
+
+        # 문장 하나가 max_tokens 이상이면 아예 건너뛰기
+        if tok_count >= max_tokens:
+            continue
+
+        # 누적토큰 + 이 문장 토큰 < max_tokens 인 경우에만 추가
+        if cum_tokens + tok_count < max_tokens:
+            kept.append(sent)
+            cum_tokens += tok_count
+        else:
+            break
+
+    # 문장들 사이에 온점+공백을 넣어 재결합
+    return '. '.join(kept)
+
+def encode_and_save(caption_dict, model, device, batch_size, out_path):
+    # 1) 각 캡션을 문장 단위로 잘라 새 캡션 생성
+    processed_caps = []
+    for frame_name, cap in caption_dict.items():
+        short_cap = build_short_caption(cap, device)
+        if short_cap:  # 잘린 결과가 비어있지 않으면 사용
+            processed_caps.append(short_cap)
+
+    if not processed_caps:
+        print(f"No valid captions in {out_path}, skipping.")
+        return
+
+    # 2) 배치 단위로 tokenize → encode (truncate=False)
+    all_feats = []
+    for i in range(0, len(processed_caps), batch_size):
+        batch = processed_caps[i : i+batch_size]
+        tokens = clip.tokenize(batch).to(device)                 # (B, max_len) 
+        with torch.no_grad():
+            feats = model.encode_text_cap(tokens)               # (B, 512)
+        all_feats.append(feats.float().cpu().numpy())
+        torch.cuda.empty_cache()
+
+    # 3) 결과 합치고 저장
+    all_feats = np.concatenate(all_feats, axis=0)               # (num_valid,512)
+    np.save(out_path, all_feats)
+    print(f"Saved {out_path} (shape={all_feats.shape}), used {len(processed_caps)}/{len(caption_dict)} captions.")
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--caption-folder",      type=str)
+    parser.add_argument("--caption-feat-folder", type=str)
+    parser.add_argument("--batch-size",         type=int, default=1024)
+    args = parser.parse_args()
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    # CLIP 모델 로드 (ViT-B/16 사용)
     model, _ = clip.load("ViT-B/16", device)
-    for param in model.parameters():
-        param.requires_grad = False
     model.eval()
+    for p in model.parameters():
+        p.requires_grad = False
 
-    root_text_dir = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/Extracted_Frames_with_10videos"
-    output_dir = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/UCF-Crimes/UCF_Crimes/ucfclip_caption_feature"
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(args.caption_feat_folder, exist_ok=True)
 
-    group_size = 16
-    batch_size = 32  # 한 번에 처리할 캡션 개수를 줄임
+    for fname in sorted(os.listdir(args.caption_folder)):
+        if not fname.endswith(".json"):
+            continue
+        json_path = os.path.join(args.caption_folder, fname)
+        with open(json_path, 'r', encoding='utf-8') as f:
+            caption_dict = json.load(f)
 
-    # 재귀적으로 텍스트 파일 찾기
-    for dirpath, dirnames, filenames in os.walk(root_text_dir):
-        for filename in filenames:
-            if filename.endswith(".txt"):
-                file_path = os.path.join(dirpath, filename)
-                with open(file_path, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
+        out_fname = fname.replace(".json", ".npy")
+        out_path  = os.path.join(args.caption_feat_folder, out_fname)
 
-                captions = []
-                for line in lines:
-                    parts = line.strip().split(":", 1)
-                    if len(parts) == 2:
-                        caption = parts[1].strip()
-                        captions.append(caption)
-                if len(captions) == 0:
-                    print(f"캡션이 없는 파일: {file_path}")
-                    continue
-
-                # 배치 처리
-                all_features = []
-                for i in range(0, len(captions), batch_size):
-                    batch_captions = captions[i:i+batch_size] # len = batch size
-                    tokens = clip.tokenize(batch_captions).to(device)   # (batch size, 77)
-                    batch_features = model.encode_text_cap(tokens) # (batch size, 512)
-                    batch_features = batch_features.float().detach().cpu().numpy()
-                    all_features.append(batch_features)
-                    
-                    # 배치 처리 후 캐시 비우기
-                    torch.cuda.empty_cache()
-
-                text_features = np.concatenate(all_features, axis=0)  # shape: [전체 캡션 수, feature_dim]
-
-                grouped_features = average_features(text_features, group_size=16)
-                rel_path = os.path.relpath(dirpath, root_text_dir)
-                out_subdir = os.path.join(output_dir, rel_path)
-                os.makedirs(out_subdir, exist_ok=True)
-                output_file = os.path.join(out_subdir, filename.replace(".txt", ".npy"))
-                np.save(output_file, grouped_features)
-                print(f"Saved {output_file} with shape {grouped_features.shape}")
+        encode_and_save(
+            caption_dict,
+            model,
+            device,
+            batch_size=args.batch_size,
+            out_path=out_path
+        )
