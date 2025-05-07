@@ -90,7 +90,6 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
         loss_total1 = 0
         loss_total2 = 0
         loss_total3 = 0
-        loss_total_rtfm = 0
         loss_total_fusion = 0
         total_loss = 0
 
@@ -129,7 +128,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 loss_fusion = fusion_loss(vis_feat, cap_feat, feat_lengths, cap_feat_lengths, device)
                 loss_total_fusion += loss_fusion.item()
 
-                loss = loss1 + loss2*0.1 + loss3 + loss_fusion
+                loss = loss1 + loss2 + loss3 * 1e-4 + loss_fusion
                 total_loss += loss.item()
 
                 optimizer.zero_grad()

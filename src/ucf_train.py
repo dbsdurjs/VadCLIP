@@ -124,17 +124,16 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 for j in range(1, text_features.shape[0]):
                     text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
                     loss3 += torch.abs(text_feature_normal @ text_feature_abr)
-                loss3 = loss3 / 13
+                loss3 = loss3 / 13 * 1e-1
                 loss_total3 += loss3.item()
                 
                 loss_fusion = fusion_loss(vis_feat, cap_feat, feat_lengths, cap_feat_lengths, device)
                 loss_total_fusion += loss_fusion.item()
                 
-                loss = loss1 + loss2 * 0.1 + loss3 + loss_fusion
+                loss = loss1 + loss2 + loss3 + loss_fusion
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
-
                 loss.backward()
                 optimizer.step()
 
