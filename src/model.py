@@ -177,14 +177,14 @@ class CLIPVAD(nn.Module):
 
         self.lstm_h_size = 512
         self.lstm_nlayers = 4
-        self.lstm = nn.LSTM(visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True, dropout=0.3) # 단방향 먼저, 양방향(output shape = hidden size *2)
+        self.lstm = nn.LSTM(visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True) # 단방향 먼저, 양방향(output shape = hidden size *2)
         self.layernorms = nn.LayerNorm(self.lstm_h_size)
 
         self.frame_position_embeddings = nn.Embedding(visual_length+1, visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
         self.caption_embeddings = nn.Embedding(visual_length+1, visual_width) # add idea66-6
         
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=visual_width, nhead=visual_head)
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=visual_width, nhead=8)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=visual_layers)
 
         self.cls_embeddings_caption = nn.Parameter(torch.randn(1, 1, self.visual_width)) # add cls token (batch*2, 1, 512)
