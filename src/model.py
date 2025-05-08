@@ -177,7 +177,7 @@ class CLIPVAD(nn.Module):
 
         self.lstm_h_size = 512
         self.lstm_nlayers = 4
-        self.lstm = nn.LSTM(visual_width, hidden_size=self.lstm_h_size, num_layers=self.lstm_nlayers, dropout=0.3) # 단방향 먼저, 양방향(output shape = hidden size *2)
+        self.lstm = nn.LSTM(visual_width, hidden_size=self.lstm_h_size, num_layers=self.lstm_nlayers, bidirectional=True) # 단방향 먼저, 양방향(output shape = hidden size *2)
         self.layernorms = nn.LayerNorm(self.lstm_h_size)
 
         self.frame_position_embeddings = nn.Embedding(visual_length+1, visual_width)
