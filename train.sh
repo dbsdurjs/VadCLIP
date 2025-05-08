@@ -1,10 +1,4 @@
-# CUDA_VISIBLE_DEVICES=0 python src/ucf_train.py --model-path='../vadclip_pth/model/model_ucf_caption(server_exp9).pth' --checkpoint-path='../vadclip_pth/model/checkpoint_caption(server_exp9).pth' --using-caption
-# CUDA_VISIBLE_DEVICES=0 python src/ucf_test.py --model-path '../vadclip_pth/model/model_ucf_caption(server_exp9).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_caption(server_exp9).pth' --using-caption --save-test-result
+CUDA_VISIBLE_DEVICES=0 python src/ucf_train.py --model-path='../vadclip_pth/model/model_ucf_caption(server_exp9).pth' --checkpoint-path='../vadclip_pth/model/checkpoint_caption(server_exp9).pth' --using-caption
+CUDA_VISIBLE_DEVICES=0 python src/ucf_test.py --model-path '../vadclip_pth/model/model_ucf_caption(server_exp9).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_caption(server_exp9).pth' --using-caption --save-test-result
 
-<<<<<<< HEAD
-=======
-CUDA_VISIBLE_DEVICES=0 python src/xd_train.py --model-path='../vadclip_pth/model/model_xd_caption(server_exp9).pth' --checkpoint-path='../vadclip_pth/model/checkpoint_caption(server_exp9).pth' --using-caption
-CUDA_VISIBLE_DEVICES=0 python src/xd_test.py --model-path '../vadclip_pth/model/model_xd_caption(server_exp9).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_caption(server_exp9).pth' --using-caption --save-test-result
-
->>>>>>> cc406a475bf5df246c4231faab0ef4a527b4e3ed
 # idea66(29) crossvit적용
