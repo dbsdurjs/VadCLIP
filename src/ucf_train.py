@@ -16,7 +16,7 @@ from torch.utils.tensorboard import SummaryWriter
 from center_loss import CenterLoss
 import datetime
 import os
-from transformers import get_cosine_with_hard_restarts_schedule_with_warmup
+from ucf_act import word_act
 
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 log_dir = os.path.join('../runs_ucf', current_time)
@@ -49,19 +49,6 @@ def CLAS2(logits, labels, lengths, device): # coarse grained
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
     return clsloss
 
-def fusion_loss(visual_features, caption_features, lengths, cap_lengths, device):
-    batch_size = visual_features.shape[0]
-    
-    vis_mean = torch.zeros(batch_size, visual_features.shape[2]).to(device)  # (128, 512)
-    cap_mean = torch.zeros(batch_size, caption_features.shape[2]).to(device)  # (128, 512)
-    for i in range(batch_size):
-        vis_mean[i] = visual_features[i, :lengths[i]].mean(dim=0)
-        cap_mean[i] = caption_features[i, :cap_lengths[i]].mean(dim=0)
-    vis_mean = vis_mean / (vis_mean.norm(dim=-1, keepdim=True))  # (128, 512)
-    cap_mean = cap_mean / (cap_mean.norm(dim=-1, keepdim=True))  # (128, 512)
-    loss = F.mse_loss(vis_mean, cap_mean)
-    return loss
-
 def kl_loss(c_visual_feat, c_caption_feat):
     #   (a) caption → visual 방향
     log_p_cap = F.log_softmax(c_caption_feat, dim=-1)  # log P_cap(i)
@@ -78,7 +65,7 @@ def kl_loss(c_visual_feat, c_caption_feat):
 
     return kl_loss
     
-def train(model, normal_loader, anomaly_loader, testloader, args, label_map, device):
+def train(model, normal_loader, anomaly_loader, testloader, args, label_map, word_act_map, device):
     model.to(device)
     gt = np.load(args.gt_path)   # frame-level gt, 동영상 1 : [0,0,0,1,1,1,1,0,..], 동영상 2 : [0,0,0,0,0,0,1,1,..]
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)   # anomaly gt 구간
@@ -88,6 +75,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
+    act_text = get_prompt_text(word_act_map)
     ap_best = 0
     epoch = 0
 
@@ -105,7 +93,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         loss_total1 = 0
         loss_total2 = 0
         loss_total3 = 0
-        loss_total_fusion = 0
         loss_total_kl = 0
         total_loss = 0
 
@@ -125,7 +112,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (128, 14)
 
-                text_features, logits1, logits2, vis_feat, cap_feat, c_visual_feat, c_caption_feat = model(visual_features, cap_features, None, prompt_text, feat_lengths, cap_feat_lengths) # edit idea6-3
+                text_features, logits1, logits2, c_visual_feat, c_caption_feat = model(visual_features, cap_features, None, prompt_text, act_text) # edit idea6-3
                 
                 #loss1 - coarse grained
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device)
@@ -143,14 +130,11 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                     loss3 += torch.abs(text_feature_normal @ text_feature_abr)
                 loss3 = loss3 / 13 * 1e-1
                 loss_total3 += loss3.item()
-                
-                # loss_fusion = fusion_loss(vis_feat, cap_feat, feat_lengths, cap_feat_lengths, device)
-                # loss_total_fusion += loss_fusion.item()
 
                 loss_kl = kl_loss(c_visual_feat, c_caption_feat)
                 loss_total_kl += loss_kl.item()
                 
-                loss = loss1 + loss2 + loss3  + 0.5 * loss_kl # + 0.5 * loss_fusion
+                loss = loss1 + loss2 + loss3  + 0.5 * loss_kl
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -162,7 +146,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    # loss_fusion=f"{(0.5 * loss_total_fusion / (i+1)):.4f}",
                     loss_kl=f"{(0.5 * loss_total_kl / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
@@ -172,19 +155,17 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            # epoch_loss_fusion = 0.5 * loss_total_fusion / (i+1)
             epoch_loss_kl = 0.5 * loss_total_kl / (i+1)
             epoch_loss_total = total_loss / (i+1)
             
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            # writer.add_scalar('loss_fusion/train', epoch_loss_fusion, e)
             writer.add_scalar('loss_kl/train', epoch_loss_kl, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_kl: {epoch_loss_kl:.4f}, loss_total: {epoch_loss_total:.4f}') # , loss_fusion: {epoch_loss_fusion:.4f}
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_kl: {epoch_loss_kl:.4f}, loss_total: {epoch_loss_total:.4f}')
 
-            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
+            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, act_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
             test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
@@ -225,6 +206,7 @@ if __name__ == '__main__':
     setup_seed(args.seed)
 
     label_map = dict({'Normal': 'normal', 'Abuse': 'abuse', 'Arrest': 'arrest', 'Arson': 'arson', 'Assault': 'assault', 'Burglary': 'burglary', 'Explosion': 'explosion', 'Fighting': 'fighting', 'RoadAccidents': 'roadAccidents', 'Robbery': 'robbery', 'Shooting': 'shooting', 'Shoplifting': 'shoplifting', 'Stealing': 'stealing', 'Vandalism': 'vandalism'})
+    word_act_map = word_act
 
     normal_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, True, args.using_caption)
     normal_loader = DataLoader(normal_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
@@ -236,5 +218,5 @@ if __name__ == '__main__':
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, args.batch_size, device)
     # print(model)
-    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
+    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, word_act_map, device)
     writer.close()

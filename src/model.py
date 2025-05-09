@@ -172,17 +172,22 @@ class CLIPVAD(nn.Module):
         
         return x
 
-    def encode_textprompt(self, text):
+    def encode_textprompt(self, text, act_text):
         word_tokens = clip.tokenize(text).to(self.device)   # 클래스 토큰 생성, tokenizer(label), (14,77)
+        act_tokens = clip.tokenize(act_text).to(self.device) # 클래스 토큰 생성, tokenizer(act), (14,77)
+
         word_embedding = self.clipmodel.encode_token(word_tokens)   # 클래스 토큰 임베딩, (14,77,512)
+        act_embedding = self.clipmodel.encode_token(act_tokens)
+
+        enhance_word_embedding = word_embedding + act_embedding
         text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])  # (14,77,512)
         text_tokens = torch.zeros(len(text), 77).to(self.device)    # (14, 77)
 
         for i in range(len(text)):
             ind = torch.argmax(word_tokens[i], -1)  # 제일 큰 값을 가지는 인덱스 추출(보통 EOT값)
-            text_embeddings[i, 0] = word_embedding[i, 0]    # 시작 토큰 배치
-            text_embeddings[i, self.prompt_prefix + 1: self.prompt_prefix + ind] = word_embedding[i, 1: ind]    # 11~10+ind까지는 클래스 임베딩 사용
-            text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix] = word_embedding[i, ind] # 20 + ind에 클래스 임베딩의 max 토큰(보통 EOT) 사용
+            text_embeddings[i, 0] = enhance_word_embedding[i, 0]    # 시작 토큰 배치
+            text_embeddings[i, self.prompt_prefix + 1: self.prompt_prefix + ind] = enhance_word_embedding[i, 1: ind]    # 11~10+ind까지는 클래스 임베딩 사용
+            text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix] = enhance_word_embedding[i, ind] # 20 + ind에 클래스 임베딩의 max 토큰(보통 EOT) 사용
             text_tokens[i, self.prompt_prefix + ind + self.prompt_postfix] = word_tokens[i, ind]    # max 토큰 이외에는 0으로 지정
             # 논문에서는 20개의 learnable prompt를 사용한다고 했지만 실제로는 77개 사용
             # 아래와 같이 EOT 토큰 이후의 값을 0으로 설정해서 사용하지 않았지만 성능 변화는 없었음
@@ -207,7 +212,7 @@ class CLIPVAD(nn.Module):
 
         return x
     
-    def forward(self, visual, captioning, padding_mask, text, lengths, cap_lengths): 
+    def forward(self, visual, captioning, padding_mask, text, act_text): 
         cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
         
@@ -220,7 +225,7 @@ class CLIPVAD(nn.Module):
         fusion_feat = torch.cat((fusion_feat[:, 0].unsqueeze(1), fusion_vis_feat), dim=1)
         logits1 = self.classifier(fusion_feat + self.mlp1(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
 
-        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
+        text_features_ori = self.encode_textprompt(text, act_text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
 
         text_features = text_features_ori
         logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256)
@@ -239,5 +244,5 @@ class CLIPVAD(nn.Module):
         
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / self.temperature #(batch, 256, 7)
 
-        return text_features_ori, logits1, logits2, visual_features, caption_features, c_visual_feat, c_caption_feat
+        return text_features_ori, logits1, logits2, c_visual_feat, c_caption_feat
     

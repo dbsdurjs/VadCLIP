@@ -15,6 +15,7 @@ import logging
 from vis import *
 import re
 from save_result import *
+from ucf_act import word_act
 
 # 로그 파일 설정
 logging.basicConfig(
@@ -24,7 +25,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, args):
+def test(model, testdataloader, maxlen, prompt_text, act_text, gt, gtsegments, gtlabels, device, args):
     
     model.to(device)
     model.eval()
@@ -70,7 +71,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     lengths[j] = length
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2, _, _, _, _ = model(visual, cap_features, padding_mask, prompt_text, lengths, cap_feat_lengths)
+            _, logits1, logits2, _, _ = model(visual, cap_features, padding_mask, prompt_text, act_text)
 
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2]) # (batch, 256, 1) -> (256, 1)
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2]) # (batch, 256, 14) -> (256, 14)
@@ -143,11 +144,14 @@ if __name__ == '__main__':
     args = ucf_option.parser.parse_args()
 
     label_map = dict({'Normal': 'Normal', 'Abuse': 'Abuse', 'Arrest': 'Arrest', 'Arson': 'Arson', 'Assault': 'Assault', 'Burglary': 'Burglary', 'Explosion': 'Explosion', 'Fighting': 'Fighting', 'RoadAccidents': 'RoadAccidents', 'Robbery': 'Robbery', 'Shooting': 'Shooting', 'Shoplifting': 'Shoplifting', 'Stealing': 'Stealing', 'Vandalism': 'Vandalism'})
+    word_act_map = word_act
 
     testdataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     testdataloader = DataLoader(testdataset, batch_size=1, shuffle=False)
     #test 시 동영상 1개씩 처리
     prompt_text = get_prompt_text(label_map)
+    act_text = get_prompt_text(word_act_map)
+    
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)
@@ -156,4 +160,4 @@ if __name__ == '__main__':
     model_param = torch.load(args.model_path)
     model.load_state_dict(model_param)
 
-    test(model, testdataloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
+    test(model, testdataloader, args.visual_length, prompt_text, act_text, gt, gtsegments, gtlabels, device, args)
