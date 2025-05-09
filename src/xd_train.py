@@ -109,7 +109,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (batch, 7)
 
-                text_features, logits1, logits2, vis_feat, cap_feat = model(visual_features, cap_features, None, prompt_text, feat_lengths, cap_feat_lengths) 
+                text_features, logits1, logits2, vis_feat, cap_feat, = model(visual_features, cap_features, None, prompt_text, feat_lengths, cap_feat_lengths) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
