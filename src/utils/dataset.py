@@ -38,7 +38,6 @@ class UCFDataset(data.Dataset):
         base_file = os.path.basename(clip_path)
         video_path = os.path.dirname(clip_path)
         video_fps = 30
-        alpha = 0.3
         
         if self.using_caption:
             base_video_name = base_file.split('__')[0]
@@ -50,8 +49,6 @@ class UCFDataset(data.Dataset):
             
             cap_path = matching_rows.iloc[0]['path']
             clip_cap_feature = np.load(cap_path)
-
-            # clip_cap_feature = clip_feature + alpha * clip_cap_feature
 
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
@@ -104,7 +101,6 @@ class XDDataset(data.Dataset):
         base_file = os.path.basename(clip_path)
         video_path = os.path.dirname(clip_path)
         video_fps = 30
-        alpha = 0.3
         
         if self.using_caption:
             base_video_name = base_file.rsplit('__', 1)[0]
@@ -117,8 +113,6 @@ class XDDataset(data.Dataset):
             cap_path = matching_rows.iloc[0]['path']
             clip_cap_feature = np.load(cap_path)
             
-            # clip_cap_feature = clip_feature + alpha * clip_cap_feature
-
         if self.test_mode == False:
             clip_feature, clip_length = tools.process_feat(clip_feature, self.clip_dim)
             clip_cap_feature, clip_cap_length = tools.process_feat(clip_cap_feature, self.clip_dim)

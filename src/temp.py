@@ -1,95 +1,48 @@
-# import os
-# import csv
-
-# def create_new_csv(
-#     old_csv='./list/xd_CLIP_rgbtest.csv',
-#     new_csv='./list/xd_CLIP_rgbtest_caption.csv',
-#     top_dir='/home/yeogeon/YG_main/diffusion_model/VAD_dataset/XD-Violence/xd_caption_feature',
-#     subfolders=('1-1004','1005-2004','2005-2804','2805-3319','3320-3954'),
-#     train=True
-# ):
-#     """
-#     기존 xd_CLIP-rgb.csv를 참조하여,
-#     top_dir 내부의 subfolders들에서 동일 파일명을 가진 npy 파일 경로를 찾아
-#     새로운 CSV 파일(new_csv)에 path,label 형식으로 기록한다.
-#     """
-#     with open(old_csv, 'r', newline='', encoding='utf-8') as f_in, \
-#          open(new_csv, 'w', newline='', encoding='utf-8') as f_out:
-
-#         reader = csv.reader(f_in)
-#         writer = csv.writer(f_out)
-
-#         # 헤더 작성
-#         writer.writerow(["path","label"])
-
-#         # 기존 CSV의 헤더 스킵
-#         next(reader, None)
-
-#         for row in reader:
-#             if len(row) < 2:
-#                 continue  # 혹시 컬럼이 2개 미만이면 스킵
-#             old_path, label = row
-
-#             # 예: "/old/path/Bad.Boys...__0.npy" -> "Bad.Boys...__0.npy"
-#             filename = os.path.basename(old_path)
-
-#             # 확장자 제거 -> "Bad.Boys...__0"
-#             name_no_ext, ext = os.path.splitext(filename)
-#             name_no_ext = name_no_ext.rsplit('__', 1)[0]
-            
-#             # .npy 확장자가 아닐 경우 스킵할지 여부는 상황에 맞게 처리
-#             if ext.lower() != '.npy':
-#                 continue
-
-#             # subfolders를 순회하며 실제 파일이 있는지 탐색
-#             found_path = None
-
-#             if train:
-#                 for sf in subfolders:
-#                     # 폴더 구조: top_dir/sf/<동영상이름폴더>/<동영상이름>.npy
-#                     candidate_dir = os.path.join(top_dir, sf, name_no_ext)
-#                     candidate_file = os.path.join(candidate_dir, f'{name_no_ext}.npy')
-
-#                     if os.path.isfile(candidate_file):
-#                         found_path = candidate_file
-#                         break
-#             else:
-#                 candidate_dir = os.path.join(top_dir, 'videos', name_no_ext)
-#                 candidate_file = os.path.join(candidate_dir, f'{name_no_ext}.npy')
-
-#                 if os.path.isfile(candidate_file):
-#                     found_path = candidate_file
-
-#             # 찾았다면 CSV에 기록
-#             if found_path is not None:
-#                 writer.writerow([found_path, label])
-#             else:
-#                 # 찾지 못했으면 로그 출력(필요에 따라 처리)
-#                 print(f"Warning: {name_no_ext} not found in new structure.")
-
-# if __name__ == '__main__':
-#     create_new_csv(train=False)
-
 import os
-import shutil
+from pathlib import Path
 
-# 원본 경로 (하위에 1-1004, 1005-2004, ... 폴더들이 있음)
-src_root = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/server_dataset/XD-Violence/Extracted_Frames"
-# 대상 경로 (모든 txt 파일을 저장할 경로)
-dst_dir = "/home/yeogeon/YG_main/diffusion_model/VAD_dataset/server_dataset/XD-Violence/Extracted_Frames_captions"
+def count_images_with_patterns(root_dir: str,
+                               exts: tuple = ('.jpg', '.jpeg', '.png', '.bmp', '.gif'),
+                               pattern_labelA: str = 'label_A',
+                               pattern_normal: str = 'Normal') -> tuple:
+    """
+    root_dir 폴더 이하에서 다음을 카운트하여 반환합니다.
+      1) 이름이 pattern_labelA로 끝나는 폴더 내 이미지 수
+      2) 이름에 pattern_normal이 포함되는 폴더 내 이미지 수
+      3) 전체 이미지 수
+    """
+    root_path = Path(root_dir)
+    if not root_path.is_dir():
+        raise ValueError(f"'{root_dir}' 경로가 존재하지 않거나 디렉토리가 아닙니다.")
 
-# 대상 경로가 없으면 생성
-if not os.path.exists(dst_dir):
-    os.makedirs(dst_dir)
+    total_labelA = 0
+    total_normal = 0
+    total_all = 0
 
-# src_root 하위 폴더를 재귀적으로 탐색
-for root, dirs, files in os.walk(src_root):
-    for file in files:
-        if file.endswith('.txt'):
-            src_file = os.path.join(root, file)
-            # 원본 파일의 상대 경로를 가져와서, 폴더 구분자를 언더바(_)로 변경하여 접두어로 사용
-            rel_path = os.path.relpath(root, src_root)  # 예: "1-1004/동영상폴더명"
-            rel_path_modified = rel_path.replace(os.sep, "_")
-            dst_file = os.path.join(dst_dir, file)
-            shutil.copy2(src_file, dst_file)
-            print(f"Copied {src_file} to {dst_file}")
+    # 모든 파일을 재귀 탐색
+    for img_path in root_path.rglob('*'):
+        if not img_path.is_file():
+            continue
+        if img_path.suffix.lower() not in exts:
+            continue
+
+        total_all += 1
+
+        # 상위 폴더 중 하나라도 pattern_labelA로 끝나면 카운트
+        if any(parent.name.endswith(pattern_labelA) for parent in img_path.parents):
+            total_labelA += 1
+
+        # 상위 폴더 중 하나라도 pattern_normal을 포함하면 카운트
+        if any(pattern_normal in parent.name for parent in img_path.parents):
+            total_normal += 1
+
+    return total_labelA, total_normal, total_all
+
+if __name__ == '__main__':
+    # 실제 경로로 변경하세요.
+    root_directory = '../VAD_dataset/UCF-Crimes/Extracted_Frames'
+
+    count_labelA, count_normal, count_all = count_images_with_patterns(root_directory)
+    print(f"▶ 'label_A'로 끝나는 폴더 내 이미지 개수: {count_labelA}")
+    print(f"▶ 'Normal'을 포함하는 폴더 내 이미지 개수: {count_normal}")
+    print(f"▶ 전체 이미지 개수:               {count_all}")
