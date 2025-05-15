@@ -17,6 +17,7 @@ from center_loss import CenterLoss
 import datetime
 import os
 from ucf_act import word_act
+import csv
 
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 log_dir = os.path.join('../runs_ucf', current_time)
@@ -25,6 +26,17 @@ writer = SummaryWriter(log_dir=log_dir)
 
 import torch
 import torch.nn.functional as F
+
+def count_csv():
+    csv_path = "./list/ucf_count.csv"  # 앞서 만든 CSV 경로
+    count_dict = {}
+    with open(csv_path, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # CSV 헤더가 ["class","count"] 라고 가정
+            count_dict[row['class']] = int(row['count'])
+
+    return count_dict
 
 def focal_loss_multi(logits, labels, alpha=0.25, gamma=2.0, reduction='mean'):
     """
@@ -42,8 +54,12 @@ def focal_loss_multi(logits, labels, alpha=0.25, gamma=2.0, reduction='mean'):
     # 3) 일반적인 크로스엔트로피
     ce = -torch.sum(labels * log_prob, dim=1)  # (B,)
 
+    alpha_factor = torch.sum(labels * alpha.unsqueeze(0), dim=1)  # (B,)
+
     # 4) 포컬 가중치 적용
-    loss = alpha * (1 - pt) ** gamma * ce      # (B,)
+    focal_weight = (1 - pt) ** gamma       # (B,)
+
+    loss = alpha_factor * focal_weight * ce  # (B,)
 
     if reduction == 'mean':
         return loss.mean()
@@ -115,8 +131,12 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, wor
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
 
+    count_dict = count_csv()
+
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
     act_text = get_prompt_text(word_act_map)
+    count_text = get_prompt_text(count_dict)
+
     ap_best = 0
     epoch = 0
 
@@ -155,12 +175,17 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, wor
 
                 text_features, logits1, logits2, c_visual_feat, c_caption_feat = model(visual_features, cap_features, None, prompt_text, act_text) # edit idea6-3
                 
+                # 예: class_counts = [#normals, #abuse, #arrest, …] 크기 C 리스트
+                counts = torch.tensor(count_text, dtype=torch.float32, device=device)
+                alpha_vec = counts.sum() / counts          # 빈도 역수
+                alpha_vec = alpha_vec / alpha_vec.sum()    # 합이 1이 되도록 정규화 (선택)
+
                 #loss1 - coarse grained
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device)
                 loss_total1 += loss1.item()
                 
                 #loss2 - fine grained
-                loss2 = CLASM_focal(logits2, text_labels, feat_lengths, device, alpha=0.25, gamma=2.0)
+                loss2 = CLASM_focal(logits2, text_labels, feat_lengths, device, alpha=alpha_vec, gamma=3.0)
                 loss_total2 += loss2.item()
 
                 #loss3

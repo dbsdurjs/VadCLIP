@@ -1,0 +1,15 @@
+class,count
+normal,800
+abuse,50
+arrest,50
+arson,50
+assault,50
+burglary,100
+explosion,50
+fighting,50
+roadAccidents,150
+robbery,150
+shooting,50
+shoplifting,50
+stealing,100
+vandalism,50

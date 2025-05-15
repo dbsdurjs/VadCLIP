@@ -261,25 +261,8 @@ class CLIPVAD(nn.Module):
             text_embeddings[i, self.prompt_prefix + 1: self.prompt_prefix + ind] = word_embedding[i, 1: ind]    # 11~10+ind까지는 클래스 임베딩 사용
             text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix] = word_embedding[i, ind] # 20 + ind에 클래스 임베딩의 max 토큰(보통 EOT) 사용
             text_tokens[i, self.prompt_prefix + ind + self.prompt_postfix] = word_tokens[i, ind]    # max 토큰 이외에는 0으로 지정
-       
-
-
-        # act_text_embeddings = self.act_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])  # (14,77,512)
-        # act_text_tokens = torch.zeros(len(act_text), 77).to(self.device)    # (14, 77)
-
-        # for i in range(len(act_text)):
-        #     ind = torch.argmax(act_word_tokens[i], -1)  # 제일 큰 값을 가지는 인덱스 추출(보통 EOT값)
-
-        #     act_text_embeddings[i, 0] = act_embedding[i, 0]    # 시작 토큰 배치
-        #     act_text_embeddings[i, self.prompt_prefix + 1: self.prompt_prefix + ind] = act_embedding[i, 1: ind]    # 11~10+ind까지는 클래스 임베딩 사용
-        #     act_text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix] = act_embedding[i, ind] # 20 + ind에 클래스 임베딩의 max 토큰(보통 EOT) 사용
-        #     act_text_tokens[i, self.prompt_prefix + ind + self.prompt_postfix] = act_word_tokens[i, ind]    # max 토큰 이외에는 0으로 지정
-        #     # 논문에서는 20개의 learnable prompt를 사용한다고 했지만 실제로는 77개 사용
-        #     # 아래와 같이 EOT 토큰 이후의 값을 0으로 설정해서 사용하지 않았지만 성능 변화는 없었음
-        #     # text_embeddings[i, self.prompt_prefix + ind + self.prompt_postfix + 1:] = 0
 
         text_features = self.clipmodel.encode_text(text_embeddings, text_tokens)    # (14,512)
-        # act_text_features = self.clipmodel.encode_text(act_text_embeddings, text_tokens)    # (14,512)
 
         return text_features
 
@@ -302,6 +285,12 @@ class CLIPVAD(nn.Module):
         cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
         
+        avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
+        avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
+
+        cls_token_cap = 0.2*cls_token_cap + avg_cap
+        cls_token_vis = 0.2*cls_token_vis + avg_vis
+        
         caption_features = self.encode_caption(captioning, cls_token_cap) # batch, 256+1, 512
         visual_features = self.encode_video(visual, cls_token_vis)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
 
@@ -320,29 +309,16 @@ class CLIPVAD(nn.Module):
         visual_attn = visual_attn / visual_attn.norm(dim=-1, keepdim=True)  # aggregate(visual features, logits1)
         visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])    # (batch,  # class, 512)
 
-        # caption_attn = logits_attn @ c_caption_feat
-        # caption_attn = caption_attn / caption_attn.norm(dim=-1, keepdim=True)  # aggregate(caption features, logits1)
-        # caption_attn = caption_attn.expand(caption_attn.shape[0], act_features_ori.shape[0], caption_attn.shape[2])    # (batch,  # class, 512)
-
         text_features = text_features_ori.unsqueeze(0)  # (1, # class, 512)
         text_features = text_features.expand(visual_attn.shape[0], text_features.shape[1], text_features.shape[2]) # (batch,  # class, 512)
         text_features = text_features + visual_attn # visual prompt(vision + Text)
         text_features = text_features + self.mlp1(text_features) # label features = visual prompt(ffn(text features) + text features), (batch,  # class, 512)
-
-        # act_features = act_features_ori.unsqueeze(0)  # (1, # class, 512)
-        # act_features = act_features.expand(caption_attn.shape[0], act_features.shape[1], act_features.shape[2]) # (batch,  # class, 512)
-        # act_features = act_features + visual_attn # visual prompt(vision + Text)
-        # act_features = act_features + self.mlp2(act_features) # label features = visual prompt(ffn(text features) + text features), (batch,  # class, 512)
         
         visual_features_norm = fusion_feat / fusion_feat.norm(dim=-1, keepdim=True) # (batch, 256+1, 512)
         text_features_norm = text_features / text_features.norm(dim=-1, keepdim=True)
         text_features_norm = text_features_norm.permute(0, 2, 1)    # (batch, 512,  # class)
-
-        # act_features_norm = act_features / act_features.norm(dim=-1, keepdim=True)
-        # act_features_norm = act_features_norm.permute(0, 2, 1)    # (batch, 512,  # class)
         
         logits2_vis = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / self.temperature_vis #(batch, 256+1,  # class)
-        # logits2_cap = visual_features_norm @ act_features_norm.type(visual_features_norm.dtype) / self.temperature_cap #(batch, 256+1,  # class)
 
         logits2 = logits2_vis
 

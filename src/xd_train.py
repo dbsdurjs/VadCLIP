@@ -17,11 +17,23 @@ from center_loss import CenterLoss
 import datetime
 import os
 from xd_act import word_act
+import csv
 
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 log_dir = os.path.join('../runs_xd', current_time)
 os.makedirs(log_dir, exist_ok=True)
 writer = SummaryWriter(log_dir=log_dir)
+
+def count_csv():
+    csv_path = "./list/xd_count.csv"  # 앞서 만든 CSV 경로
+    count_dict = {}
+    with open(csv_path, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            # CSV 헤더가 ["class","count"] 라고 가정
+            count_dict[row['class']] = int(row['count'])
+
+    return count_dict
 
 def focal_loss_multi(logits, labels, alpha=0.25, gamma=2.0, reduction='mean'):
     """
@@ -39,8 +51,12 @@ def focal_loss_multi(logits, labels, alpha=0.25, gamma=2.0, reduction='mean'):
     # 3) 일반적인 크로스엔트로피
     ce = -torch.sum(labels * log_prob, dim=1)  # (B,)
 
+    alpha_factor = torch.sum(labels * alpha.unsqueeze(0), dim=1)  # (B,)
+
     # 4) 포컬 가중치 적용
-    loss = alpha * (1 - pt) ** gamma * ce      # (B,)
+    focal_weight = (1 - pt) ** gamma       # (B,)
+
+    loss = alpha_factor * focal_weight * ce  # (B,)
 
     if reduction == 'mean':
         return loss.mean()
@@ -111,8 +127,11 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
 
+    count_dict = count_csv()
+
     prompt_text = get_prompt_text(label_map)
     act_text = get_prompt_text(word_act_map)
+    count_text = get_prompt_text(count_dict)
 
     ap_best = 0
     epoch = 0
@@ -152,10 +171,15 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
 
                 text_features, logits1, logits2, c_visual_feat, c_caption_feat = model(visual_features, cap_features, None, prompt_text, act_text) 
 
+                # 예: class_counts = [#normals, #abuse, #arrest, …] 크기 C 리스트
+                counts = torch.tensor(count_text, dtype=torch.float32, device=device)
+                alpha_vec = counts.sum() / counts          # 빈도 역수
+                alpha_vec = alpha_vec / alpha_vec.sum()    # 합이 1이 되도록 정규화 (선택)
+
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
 
-                loss2 = CLASM_focal(logits2, text_labels, feat_lengths, device, alpha=0.25, gamma=2.0)
+                loss2 = CLASM_focal(logits2, text_labels, feat_lengths, device, alpha=alpha_vec, gamma=2.0)
                 loss_total2 += loss2.item()
 
                 loss3 = torch.zeros(1).to(device)
@@ -163,14 +187,14 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 for j in range(1, text_features.shape[0]):
                     text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
                     loss3 += torch.abs(text_feature_normal @ text_feature_abr)
-                loss3 = loss3 / 6
+                loss3 = loss3 / 6 * 1e-4 
                 loss_total3 += loss3.item()
 
                 loss_kl = kl_loss(c_visual_feat, c_caption_feat)
                 loss_kl *= 1e-2
                 loss_total_kl += loss_kl.item()
 
-                loss = loss1 + loss2 + loss3 * 1e-4 + loss_kl
+                loss = loss1 + loss2 + loss3 + loss_kl
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
