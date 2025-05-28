@@ -16,7 +16,6 @@ from torch.utils.tensorboard import SummaryWriter
 from center_loss import CenterLoss
 import datetime
 import os
-from ucf_act import word_act
 import csv
 
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -69,7 +68,7 @@ def focal_loss_multi(logits, labels, alpha=0.25, gamma=2.0, reduction='mean'):
         return loss  # (B,) 리턴
 
 
-def CLASM_focal(logits, labels, lengths, device, alpha=0.25, gamma=2.0):
+def CLASM_focal(logits, labels, lengths, device, alpha=0.75, gamma=2.0):
     """
     fine-grained 멀티클래스 분류에 포컬 손실 적용
     - logits: (B, T, C)
@@ -107,10 +106,10 @@ def CLAS2(logits, labels, lengths, device): # coarse grained
     return clsloss
 
 def kl_loss(c_visual_feat, c_caption_feat):
-    #   (a) caption → visual 방향
-    log_p_cap = F.log_softmax(c_caption_feat, dim=-1)  # log P_cap(i)
-    q_vis    = F.softmax(    c_visual_feat,  dim=-1)  # Q_vis(i)
-    kl_cap2vis = F.kl_div(log_p_cap, q_vis, reduction='batchmean')
+    # #   (a) caption → visual 방향
+    # log_p_cap = F.log_softmax(c_caption_feat, dim=-1)  # log P_cap(i)
+    # q_vis    = F.softmax(    c_visual_feat,  dim=-1)  # Q_vis(i)
+    # kl_cap2vis = F.kl_div(log_p_cap, q_vis, reduction='batchmean')
 
     #   (b) visual → caption 방향
     log_p_vis = F.log_softmax(c_visual_feat,  dim=-1)  # log P_vis(i)
@@ -118,11 +117,11 @@ def kl_loss(c_visual_feat, c_caption_feat):
     kl_vis2cap = F.kl_div(log_p_vis, q_cap, reduction='batchmean')
 
     #   (c) 총 KL Loss
-    kl_loss = kl_cap2vis + kl_vis2cap
+    kl_loss = kl_vis2cap
 
     return kl_loss
     
-def train(model, normal_loader, anomaly_loader, testloader, args, label_map, word_act_map, device):
+def train(model, normal_loader, anomaly_loader, testloader, args, label_map, device):
     model.to(device)
     gt = np.load(args.gt_path)   # frame-level gt, 동영상 1 : [0,0,0,1,1,1,1,0,..], 동영상 2 : [0,0,0,0,0,0,1,1,..]
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)   # anomaly gt 구간
@@ -134,7 +133,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, wor
     count_dict = count_csv()
 
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
-    act_text = get_prompt_text(word_act_map)
     count_text = get_prompt_text(count_dict)
 
     ap_best = 0
@@ -173,7 +171,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, wor
                 cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (128, 14)
 
-                text_features, logits1, logits2, c_visual_feat, c_caption_feat = model(visual_features, cap_features, None, prompt_text, act_text) # edit idea6-3
+                text_features, logits1, logits2, c_visual_feat, c_caption_feat = model(visual_features, cap_features, None, prompt_text) # edit idea6-3
                 
                 # 예: class_counts = [#normals, #abuse, #arrest, …] 크기 C 리스트
                 counts = torch.tensor(count_text, dtype=torch.float32, device=device)
@@ -232,7 +230,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, wor
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
             print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_kl: {epoch_loss_kl:.4f}, loss_total: {epoch_loss_total:.4f}')
 
-            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, act_text, gt, gtsegments, gtlabels, device, args)
+            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
             test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
@@ -273,7 +271,6 @@ if __name__ == '__main__':
     setup_seed(args.seed)
 
     label_map = dict({'Normal': 'normal', 'Abuse': 'abuse', 'Arrest': 'arrest', 'Arson': 'arson', 'Assault': 'assault', 'Burglary': 'burglary', 'Explosion': 'explosion', 'Fighting': 'fighting', 'RoadAccidents': 'roadAccidents', 'Robbery': 'robbery', 'Shooting': 'shooting', 'Shoplifting': 'shoplifting', 'Stealing': 'stealing', 'Vandalism': 'vandalism'})
-    word_act_map = word_act
 
     normal_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, True, args.using_caption)
     normal_loader = DataLoader(normal_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
@@ -285,5 +282,5 @@ if __name__ == '__main__':
 
     model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, args.batch_size, device)
     # print(model)
-    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, word_act_map, device)
+    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
     writer.close()

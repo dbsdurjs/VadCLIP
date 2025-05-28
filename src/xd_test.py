@@ -11,10 +11,8 @@ from utils.tools import get_batch_mask, get_prompt_text
 from utils.xd_detectionMAP import getDetectionMAP as dmAP
 import xd_option
 from save_result import *
-from xd_act import word_act
 
-
-def test(model, testdataloader, maxlen, prompt_text, act_text, gt, gtsegments, gtlabels, device, args):
+def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, args):
     
     model.to(device)
     model.eval()
@@ -31,7 +29,6 @@ def test(model, testdataloader, maxlen, prompt_text, act_text, gt, gtsegments, g
             video_label = item[1] # add
             length = item[2] # padding 256 사이즈에서 실제 프레임 수만큼 줄이기
             cap_features = item[3].squeeze(0)
-            cap_feat_lengths = item[4]
             video_basename = item[5] # add
             video_path = item[6]  # 프레임 이미지들이 저장된 폴더 경로
             video_fps = item[7]   # 동영상 fps
@@ -59,7 +56,7 @@ def test(model, testdataloader, maxlen, prompt_text, act_text, gt, gtsegments, g
                     lengths[j] = length
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2, _, _ = model(visual, cap_features, padding_mask, prompt_text, act_text)
+            _, logits1, logits2, _, _ = model(visual, cap_features, padding_mask, prompt_text)
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2])
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2])
             prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1))
@@ -116,13 +113,11 @@ if __name__ == '__main__':
     args = xd_option.parser.parse_args()
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
-    word_act_map = word_act
 
     test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     prompt_text = get_prompt_text(label_map)
-    act_text = get_prompt_text(word_act_map)
 
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
@@ -132,4 +127,4 @@ if __name__ == '__main__':
     model_param = torch.load(args.model_path)
     model.load_state_dict(model_param)
 
-    test(model, test_loader, args.visual_length, prompt_text, act_text, gt, gtsegments, gtlabels, device, args)
+    test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)

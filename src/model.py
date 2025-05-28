@@ -8,6 +8,8 @@ from clip import clip
 from utils.layers import GraphConvolution, DistanceAdj
 from collections import OrderedDict
 from einops import repeat
+from pytorch_tcn import TCN
+from sentence_transformers import SentenceTransformer
 
 class LayerNorm(nn.LayerNorm):
 
@@ -47,6 +49,12 @@ class ResidualAttentionBlock(nn.Module):
         x = x + self.mlp(self.ln_2(x))
         return (x, padding_mask)
 
+
+class swiglu(nn.Module):
+    def forward(self, x):
+        a,b = x.chunk(2, dim=-1)
+        hidden = F.silu(a) * b
+        return hidden
 
 class Transformer(nn.Module):
     def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None):
@@ -107,16 +115,16 @@ class CrossAttentionFusion(nn.Module):
             # 캡션 → 시각 Cross Attention
             cap_query = cap_class.unsqueeze(1)  # (batch, 1, 512)
             cap_qkv = norm_c(torch.cat((cap_query, vis_patches), dim=1)) # (batch, 256+1, 512)
-            attn_out_cap, _ = c_to_v(cap_query.permute(1, 0, 2), cap_qkv.permute(1, 0, 2), cap_qkv.permute(1, 0, 2)) # query, key value를 MHA에 입력
-            cap_out = attn_out_cap.permute(1, 0, 2) + cap_query
-            fusion_cap = torch.cat((cap_patches, cap_out), dim=1)
+            attn_out_cap, _ = c_to_v(cap_query.permute(1, 0, 2), cap_qkv.permute(1, 0, 2), cap_qkv.permute(1, 0, 2)) # query, key value를 MHA에 입력, (1, batch, 512)
+            cap_out = attn_out_cap.permute(1, 0, 2) + cap_query # (batch, 1, 512)
+            fusion_cap = torch.cat((cap_out, cap_patches), dim=1)
 
             # 시각 → 캡션 Cross Attention
             vis_query = vis_class.unsqueeze(1)  # (batch, 1, 512)
             vis_qkv = norm_v(torch.cat((vis_query, cap_patches), dim=1)) # (batch, 256+1, 512)
             attn_out_vis, _ = v_to_c(vis_query.permute(1, 0, 2), vis_qkv.permute(1, 0, 2), vis_qkv.permute(1, 0, 2)) # query, key value를 MHA에 입력
-            vis_out = attn_out_vis.permute(1, 0, 2) + vis_query
-            fusion_vis = torch.cat((vis_patches, vis_out), dim=1)
+            vis_out = attn_out_vis.permute(1, 0, 2) + vis_query # (batch, 1, 512)
+            fusion_vis = torch.cat((vis_out, vis_patches), dim=1)
 
         caption_features = self.mlp_head_cap(fusion_cap) # batch, 257, 512
         visual_features = self.mlp_head_vis(fusion_vis) # batch, 257, 512
@@ -151,23 +159,35 @@ class CLIPVAD(nn.Module):
         self.batch_size = batch_size # add cls token
         self.device = device
 
+        self.caption_dim = 768
+        # Transformer 인코더용 LayerNorm
+        self.encoder_norm = nn.LayerNorm(self.caption_dim).to(device)
+
         self.mlp1 = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(visual_width, visual_width * 4)),
             ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(visual_width * 4, visual_width))
+            ("dropout1", nn.Dropout()),
+            ("c_proj", nn.Linear(visual_width * 4, visual_width)),
+            ("dropout2", nn.Dropout()),
         ]))
 
         self.mlp2 = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(visual_width, visual_width * 4)),
             ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(visual_width * 4, visual_width))
+            ("dropout1", nn.Dropout()),
+            ("c_proj", nn.Linear(visual_width * 4, visual_width)),
+            ("dropout2", nn.Dropout()),
         ]))
 
-        self.mlp3 = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(visual_width * 2, visual_width)),
+        self.mlp3_caption = nn.Sequential(OrderedDict([
+            ("c_fc", nn.Linear(self.caption_dim, self.caption_dim * 4)),
             ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(visual_width, visual_width))
+            ("dropout1", nn.Dropout()),
+            ("c_proj", nn.Linear(self.caption_dim * 4, self.caption_dim)),
+            ("dropout2", nn.Dropout()),
         ]))
+        
+        self.mlp3_norm = nn.LayerNorm(self.caption_dim)
 
         self.temporal = Transformer(
             width=visual_width,
@@ -184,21 +204,21 @@ class CLIPVAD(nn.Module):
 
         self.lstm_h_size = 512
         self.lstm_nlayers = 4
-        self.lstm = nn.LSTM(visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True, dropout=0.3) # 단방향 먼저, 양방향(output shape = hidden size *2)
+        self.lstm = nn.LSTM(visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True, dropout=0.3) # 양방향(output shape = hidden size *2)
         self.batchnorms = nn.BatchNorm1d(self.lstm_h_size)
 
         self.temperature_vis = nn.Parameter(torch.tensor(0.07))
-        self.temperature_cap = nn.Parameter(torch.tensor(0.07))
 
         self.frame_position_embeddings = nn.Embedding(visual_length+1, visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
-        self.act_embeddings = nn.Embedding(77, self.embed_dim)
-        self.caption_embeddings = nn.Embedding(visual_length+1, visual_width) # add idea66-6
-        
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=visual_width, nhead=visual_head)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=visual_layers)
+        self.caption_embeddings = nn.Embedding(visual_length+1, self.caption_dim)
 
-        self.cls_embeddings_caption = nn.Parameter(torch.randn(1, 1, self.visual_width)) # add cls token (batch*2, 1, 512)
+        self.fn_caption = nn.Linear(self.caption_dim, visual_width)
+
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.caption_dim, nhead=visual_head)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=visual_layers)
+        
+        self.cls_embeddings_caption = nn.Parameter(torch.randn(1, 1, self.caption_dim)) # add cls token (batch*2, 1, 768)
         self.cls_embeddings_visual = nn.Parameter(torch.randn(1, 1, self.visual_width)) # add cls token (batch*2, 1, 512)
 
         self.crossfusion = CrossAttentionFusion(fusion_dim=visual_width)
@@ -208,6 +228,8 @@ class CLIPVAD(nn.Module):
         nn.init.normal_(self.text_prompt_embeddings.weight, std=0.01)
         nn.init.normal_(self.frame_position_embeddings.weight, std=0.01)
         nn.init.normal_(self.caption_embeddings.weight, std=0.01)
+        nn.init.normal_(self.cls_embeddings_caption, std=0.01)
+        nn.init.normal_(self.cls_embeddings_visual, std=0.01)
 
     def build_attention_mask(self, attn_window):
         # lazily create causal attention mask, with full attention between the vision tokens
@@ -227,6 +249,23 @@ class CLIPVAD(nn.Module):
         position_ids = torch.arange(self.visual_length+1, device=self.device)
         position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)    # (batch size,256+1)
         frame_position_embeddings = self.frame_position_embeddings(position_ids)    # (batch size, 256+1, 512)
+        
+        # -------------------------------------------------------------------- cls token도 같이 학습
+        # visual_feat = torch.cat((cls_token_vis, images), dim=1)
+        # pos_visual_feat = visual_feat + frame_position_embeddings
+
+        # lstm_input = pos_visual_feat.permute(1, 0, 2) # (256+1, batch, 512)
+        # lstm_output, (_, _) = self.lstm(lstm_input)
+        # lstm_output = self.batchnorms(lstm_output.permute(1, 2, 0))  # (batch, 512, 256+1)
+        # lstm_output += lstm_input.permute(1, 2, 0) # (batch, 512, 256+1)
+
+        # attn_input = lstm_output.permute(2, 0, 1) # (256+1, batch, 512)
+
+        # attn_out, _ = self.temporal((attn_input, None))    # local module(clip img features), (256, batch, 512)
+        # attn_out += attn_input # (256, batch, 512)
+
+        # x = attn_out.permute(1, 0, 2)
+        # ---------------------------------------------------------------------
         cls_token_vis = cls_token_vis + frame_position_embeddings[:, 0].unsqueeze(1)
         images_feat = images.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
 
@@ -242,14 +281,9 @@ class CLIPVAD(nn.Module):
         
         return x
 
-    def encode_textprompt(self, text, act_text):
-        word_tokens = clip.tokenize(text).to(self.device)   # 클래스 토큰 생성, tokenizer(label), (14,77)
-        word_embedding = self.clipmodel.encode_token(word_tokens)   # 클래스 토큰 임베딩, (14,77,512)
-
-        act_word_tokens = clip.tokenize(act_text).to(self.device) # 클래스 토큰 생성, tokenizer(act), (14,77)
-        act_embedding = self.clipmodel.encode_token(act_word_tokens)
-
-        word_embedding = word_embedding + act_embedding
+    def encode_textprompt(self, text):
+        word_tokens = clip.tokenize(text).to(self.device)   # 클래스 토큰 생성, tokenizer(label), (#class,77)
+        word_embedding = self.clipmodel.encode_token(word_tokens)   # 클래스 토큰 임베딩, (#class,77,512)
 
         text_embeddings = self.text_prompt_embeddings(torch.arange(77).to(self.device)).unsqueeze(0).repeat([len(text), 1, 1])  # (14,77,512)
         text_tokens = torch.zeros(len(text), 77).to(self.device)    # (14, 77)
@@ -267,29 +301,49 @@ class CLIPVAD(nn.Module):
         return text_features
 
     def encode_caption(self, caption, cls_token_cap):
-        caption = caption.to(torch.float) # (batch size, 256, 512)
-        position_ids = torch.arange(self.visual_length+1, device=self.device)
-        position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size, 256+1)
-        frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 512)
+        caption = caption.to(torch.float) # (batch size, 256, 768)
+        # position_ids = torch.arange(self.visual_length+1, device=self.device)
+        # position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size, 256+1)
+        # frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 768)
         
-        cls_token_cap = cls_token_cap + frame_position_embeddings[:, 0].unsqueeze(1)
-        caption_feat = caption.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
-        
-        x = self.transformer_encoder(caption_feat) # cls token 제외 encoder 입력
-        x += caption.permute(1, 0, 2)
-        x = torch.cat((cls_token_cap, x.permute(1, 0, 2)), dim=1)
+        # -------------------------------------------------------------------- cls token도 같이 학습
+        # caption_feat = torch.cat((cls_token_cap, caption), dim=1)
+        # pos_caption_feat = caption_feat + frame_position_embeddings
+
+        # encoder_input = pos_caption_feat.permute(1, 0, 2) # 256+1, batch, 768
+        # encoder_output = self.transformer_encoder(encoder_input) # 256+1, batch, 768
+
+        # residual = encoder_output.permute(1, 0, 2) # batch, 256+1, 768
+        # ffn_output = self.mlp3_caption(encoder_output.permute(1, 0, 2)) # batch, 256+1, 768
+        # ffn_output = self.mlp3_norm(ffn_output + residual)
+
+        # x = self.fn_caption(ffn_output) # batch, 256+1, 512
+        # ---------------------------------------------------------------------
+        cls_token_cap = cls_token_cap #+ frame_position_embeddings[:, 0].unsqueeze(1) # (batch size, 1, 512)
+        caption_feat = caption.permute(1, 0, 2)# + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 768), transformer encdoer
+       
+        # Transformer 인코더
+        encoder_output = self.transformer_encoder(caption_feat)  # (256, batch, 768)
+        encoder_output = encoder_output.permute(1, 0, 2)  # (batch, 256, 768)
+
+        residual = encoder_output
+        ffn_output = self.mlp3_caption(encoder_output)
+        ffn_output = self.mlp3_norm(ffn_output + residual)
+
+        x = torch.cat((cls_token_cap, ffn_output), dim=1)  # (batch, 257, 768)
+        x = self.fn_caption(x)  # (batch, 257, 512)
 
         return x
     
-    def forward(self, visual, captioning, padding_mask, text, act_text): 
-        cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
+    def forward(self, visual, captioning, padding_mask, text): 
+        cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 768)
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
         
         avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
         avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
 
-        cls_token_cap = 0.2*cls_token_cap + avg_cap
-        cls_token_vis = 0.2*cls_token_vis + avg_vis
+        cls_token_cap = cls_token_cap + avg_cap
+        cls_token_vis = cls_token_vis + avg_vis
         
         caption_features = self.encode_caption(captioning, cls_token_cap) # batch, 256+1, 512
         visual_features = self.encode_video(visual, cls_token_vis)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
@@ -298,9 +352,10 @@ class CLIPVAD(nn.Module):
 
         fusion_vis_feat = fusion_feat[:, 1:] + visual
         fusion_feat = torch.cat((fusion_feat[:, 0].unsqueeze(1), fusion_vis_feat), dim=1)
-        logits1 = self.classifier(fusion_feat + self.mlp1(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256+1, 1)
 
-        text_features_ori = self.encode_textprompt(text, act_text)    # clip text encoder(learnable prompt + text), ( # class, 77, 512) -> ( # class, 512)
+        logits1 = self.classifier(fusion_feat + self.mlp2(fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256+1, 1)
+
+        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), ( # class, 77, 512) -> ( # class, 512)
 
         text_features = text_features_ori
         logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256+1)
@@ -318,9 +373,7 @@ class CLIPVAD(nn.Module):
         text_features_norm = text_features / text_features.norm(dim=-1, keepdim=True)
         text_features_norm = text_features_norm.permute(0, 2, 1)    # (batch, 512,  # class)
         
-        logits2_vis = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / self.temperature_vis #(batch, 256+1,  # class)
-
-        logits2 = logits2_vis
+        logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / self.temperature_vis #(batch, 256+1,  # class)
 
         return text_features_ori, logits1, logits2, c_visual_feat[:, 0], c_caption_feat[:, 0]
     
