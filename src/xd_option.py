@@ -14,9 +14,9 @@ parser.add_argument('--prompt-postfix', default=10, type=int)
 parser.add_argument('--classes-num', default=7, type=int)
 
 parser.add_argument('--max-epoch', default=10, type=int)
-parser.add_argument('--model-path', default='model/model_xd_caption.pth')
+parser.add_argument('--model-path', default='../vadclip_pth/model/model_xd_caption(server_exp9).pth')
 parser.add_argument('--use-checkpoint', default=False, type=bool)
-parser.add_argument('--checkpoint-path', default='model/checkpoint_caption.pth')
+parser.add_argument('--checkpoint-path', default='../vadclip_pth/model/checkpoint_caption(server_exp9).pth')
 parser.add_argument('--batch-size', default=96, type=int)
 
 parser.add_argument('--using-caption', action='store_true', default=True)

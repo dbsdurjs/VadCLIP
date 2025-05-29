@@ -38,7 +38,7 @@ def CLAS2(logits, labels, lengths, device):
     instance_logits = torch.zeros(0).to(device)
     labels = 1 - labels[:, 0].reshape(labels.shape[0]) # (batch, 7) -> (batch)
     labels = labels.to(device)
-    logits = torch.sigmoid(logits).reshape(logits.shape[0], logits.shape[1]) # (batch,256)
+    logits = torch.sigmoid(logits).reshape(logits.shape[0], logits.shape[1]) # (batch, 256)
 
     for i in range(logits.shape[0]):
         tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
