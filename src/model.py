@@ -258,7 +258,7 @@ class CLIPVAD(nn.Module):
         fusion_query = cls_token.expand(cls_token.shape[0], visual_feat.shape[1], cls_token.shape[2]) # batch, 256, 512
         fusion_query = self.norm_final(fusion_query)
 
-        vis_fusion_feat, _ = self.cross_attn_final(fusion_query.permute(1, 0, 2), visual_feat.permute(1, 0, 2), visual_feat.permute(1, 0, 2)) # 256, batch, 512
+        vis_fusion_feat, _ = self.cross_attn_final(visual_feat.permute(1, 0, 2), fusion_query.permute(1, 0, 2), fusion_query.permute(1, 0, 2)) # 256, batch, 512
         vis_fusion_feat = vis_fusion_feat.permute(1, 0, 2)
         vis_fusion_feat = vis_fusion_feat + visual_feat
 
