@@ -64,6 +64,34 @@ def kl_loss(c_visual_feat, c_caption_feat):
 
     return kl_loss
 
+def caption_bce(caption_logits, labels, lengths, device):
+    instance_logits = torch.zeros(0).to(device)
+    labels = 1 - labels[:, 0].reshape(labels.shape[0])
+    labels = labels.to(device)
+    logits = torch.sigmoid(caption_logits).reshape(caption_logits.shape[0], caption_logits.shape[1])
+
+    for i in range(logits.shape[0]):
+        tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
+        tmp = torch.mean(tmp).view(1)
+        instance_logits = torch.cat([instance_logits, tmp], dim=0)
+
+    clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
+    return clsloss
+
+def visual_bce(visual_logits, labels, lengths, device):
+    instance_logits = torch.zeros(0).to(device)
+    labels = 1 - labels[:, 0].reshape(labels.shape[0])
+    labels = labels.to(device)
+    logits = torch.sigmoid(visual_logits).reshape(visual_logits.shape[0], visual_logits.shape[1])
+
+    for i in range(logits.shape[0]):
+        tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
+        tmp = torch.mean(tmp).view(1)
+        instance_logits = torch.cat([instance_logits, tmp], dim=0)
+
+    clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
+    return clsloss
+
 def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
     model.to(device)
 
@@ -94,6 +122,8 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
         loss_total2 = 0
         loss_total3 = 0
         loss_total_kl = 0
+        loss_total_caption = 0
+        loss_total_visual = 0
         total_loss = 0
 
         normal_iter = iter(normal_loader)
@@ -112,7 +142,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (batch, 7)
 
-                text_features, logits1, logits2, c_visual_feat, c_caption_feat = model(visual_features, cap_features, None, prompt_text) 
+                text_features, logits1, logits2, c_visual_feat, c_caption_feat, caption_logits, visual_logits = model(visual_features, cap_features, None, prompt_text) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -128,10 +158,16 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 loss3 = loss3 / 6
                 loss_total3 += loss3.item()
 
-                loss_kl = kl_loss(c_visual_feat, c_caption_feat)
-                loss_total_kl += loss_kl.item()
+                # loss_kl = kl_loss(c_visual_feat, c_caption_feat)
+                # loss_total_kl += loss_kl.item()
 
-                loss = loss1 + loss2 + loss3 * 1e-4 + 0.5 * loss_kl
+                loss_caption = caption_bce(caption_logits, text_labels, feat_lengths, device)
+                loss_total_caption += loss_caption.item()
+
+                loss_visual = visual_bce(visual_logits, text_labels, feat_lengths, device)
+                loss_total_visual += loss_visual.item()
+
+                loss = loss1 + loss2 + loss3 * 1e-4 + loss_caption + loss_visual
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -139,29 +175,32 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 loss.backward()
                 optimizer.step()
 
-               # tqdm 업데이트 및 정보 추가
+            # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    loss_kl=f"{(0.5 * loss_total_kl / (i+1)):.4f}",
+                    loss_caption=f"{(loss_total_caption / (i+1)):.4f}",
+                    loss_visual=f"{(loss_total_visual / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
                 pbar.update(1)
 
-             # 에포크 손실 기록
+            # 에포크 손실 기록
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            epoch_loss_kl = 0.5 * loss_total_kl / (i+1)
+            epoch_loss_caption = loss_total_caption / (i+1)
+            epoch_loss_visual = loss_total_visual / (i+1)
             epoch_loss_total = total_loss / (i+1)
             
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            writer.add_scalar('loss_kl/train', epoch_loss_kl, e)
+            writer.add_scalar('loss_caption/train', epoch_loss_caption, e)
+            writer.add_scalar('loss_visual/train', epoch_loss_visual, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_kl: {epoch_loss_kl:.4f}, loss_total: {epoch_loss_total:.4f}')
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_caption: {epoch_loss_caption:.4f}, loss_visual: {epoch_loss_visual:.4f}, loss_total: {epoch_loss_total:.4f}')
             
             AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
@@ -212,5 +251,5 @@ if __name__ == '__main__':
     test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, args.batch_size, device)
+    model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, args.batch_size, args.lstm_layer, device)
     train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
