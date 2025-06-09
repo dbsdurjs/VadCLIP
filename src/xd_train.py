@@ -64,11 +64,11 @@ def kl_loss(c_visual_feat, c_caption_feat):
 
     return kl_loss
 
-def caption_bce(caption_logits, labels, lengths, device):
+def concat_bce(concat_logits, labels, lengths, device):
     instance_logits = torch.zeros(0).to(device)
     labels = 1 - labels[:, 0].reshape(labels.shape[0])
     labels = labels.to(device)
-    logits = torch.sigmoid(caption_logits).reshape(caption_logits.shape[0], caption_logits.shape[1])
+    logits = torch.sigmoid(concat_logits).reshape(concat_logits.shape[0], concat_logits.shape[1])
 
     for i in range(logits.shape[0]):
         tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
@@ -78,19 +78,26 @@ def caption_bce(caption_logits, labels, lengths, device):
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
     return clsloss
 
-def visual_bce(visual_logits, labels, lengths, device):
-    instance_logits = torch.zeros(0).to(device)
-    labels = 1 - labels[:, 0].reshape(labels.shape[0])
+def visual_ce(visual_logits, labels, lengths, device, alpha=1.0, gamma=2.0, reduction='mean'):
+    instance_logits = torch.zeros((visual_logits.shape[0], visual_logits.shape[2])).to(device)
     labels = labels.to(device)
-    logits = torch.sigmoid(visual_logits).reshape(visual_logits.shape[0], visual_logits.shape[1])
 
-    for i in range(logits.shape[0]):
-        tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
-        tmp = torch.mean(tmp).view(1)
-        instance_logits = torch.cat([instance_logits, tmp], dim=0)
+    for i in range(visual_logits.shape[0]):
+        tmp, _ = torch.topk(visual_logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True, dim=0)
+        instance_logits[i] = torch.mean(tmp, dim=0)
 
-    clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
-    return clsloss
+    probs = F.softmax(instance_logits, dim=1)
+    log_probs = F.log_softmax(instance_logits, dim=1)
+    pt = torch.sum(probs * labels, dim=1)
+    focal_weight = alpha * (1 - pt).pow(gamma)
+    loss = -focal_weight * torch.sum(labels * log_probs, dim=1)
+
+    if reduction == 'mean':
+        loss = loss.mean()
+    elif reduction == 'sum':
+        loss = loss.sum()
+    
+    return loss
 
 def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
     model.to(device)
@@ -122,7 +129,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
         loss_total2 = 0
         loss_total3 = 0
         loss_total_kl = 0
-        loss_total_caption = 0
+        loss_total_concat = 0
         loss_total_visual = 0
         total_loss = 0
 
@@ -142,7 +149,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (batch, 7)
 
-                text_features, logits1, logits2, c_visual_feat, c_caption_feat, caption_logits, visual_logits = model(visual_features, cap_features, None, prompt_text) 
+                text_features, logits1, logits2, c_visual_feat, c_caption_feat, concat_logits, visual_logits = model(visual_features, cap_features, None, prompt_text) 
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -158,16 +165,13 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 loss3 = loss3 / 6
                 loss_total3 += loss3.item()
 
-                # loss_kl = kl_loss(c_visual_feat, c_caption_feat)
-                # loss_total_kl += loss_kl.item()
+                loss_concat = concat_bce(concat_logits, text_labels, feat_lengths, device)
+                loss_total_concat += loss_concat.item()
 
-                loss_caption = caption_bce(caption_logits, text_labels, feat_lengths, device)
-                loss_total_caption += loss_caption.item()
-
-                loss_visual = visual_bce(visual_logits, text_labels, feat_lengths, device)
+                loss_visual = visual_ce(visual_logits, text_labels, feat_lengths, device, alpha=1.0, gamma=2.0)
                 loss_total_visual += loss_visual.item()
 
-                loss = loss1 + loss2 + loss3 * 1e-4 + loss_caption + loss_visual
+                loss = loss1 + loss2 + loss3 * 1e-4 + loss_concat + loss_visual
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -180,7 +184,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    loss_caption=f"{(loss_total_caption / (i+1)):.4f}",
+                    loss_concat=f"{(loss_total_concat / (i+1)):.4f}",
                     loss_visual=f"{(loss_total_visual / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
@@ -190,18 +194,18 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            epoch_loss_caption = loss_total_caption / (i+1)
+            epoch_loss_concat = loss_total_concat / (i+1)
             epoch_loss_visual = loss_total_visual / (i+1)
             epoch_loss_total = total_loss / (i+1)
             
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            writer.add_scalar('loss_caption/train', epoch_loss_caption, e)
+            writer.add_scalar('loss_concat/train', epoch_loss_concat, e)
             writer.add_scalar('loss_visual/train', epoch_loss_visual, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_caption: {epoch_loss_caption:.4f}, loss_visual: {epoch_loss_visual:.4f}, loss_total: {epoch_loss_total:.4f}')
-            
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_concat: {epoch_loss_concat:.4f}, loss_visual: {epoch_loss_visual:.4f}, loss_total: {epoch_loss_total:.4f}')
+   
             AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
             test_acc1 = {'AUC1':AUC, 'AP1':AP}
