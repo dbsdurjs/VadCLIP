@@ -16,7 +16,7 @@ parser.add_argument('--classes-num', default=14, type=int)
 parser.add_argument('--max-epoch', default=10, type=int)
 parser.add_argument('--model-path', default='../vadclip_pth/model/model_ucf_caption.pth')
 parser.add_argument('--use-checkpoint', default=False, type=bool)
-parser.add_argument('--checkpoint-path', default='../vadclip_pth/model/checkpoint_caption.pth')
+parser.add_argument('--checkpoint-path', default='../vadclip_pth/model/checkpoint_ucf_caption.pth')
 parser.add_argument('--batch-size', default=64, type=int)
 
 parser.add_argument('--using-caption', action='store_true', default=True)

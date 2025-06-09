@@ -148,7 +148,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                     loss_kl=f"{(0.5 * loss_total_kl / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
-                pbar.update(1)
+                pbar.update(1)f
 
             # 에포크 손실 기록
             epoch_loss1 = loss_total1 / (i+1)
