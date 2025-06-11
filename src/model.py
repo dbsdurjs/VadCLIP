@@ -140,7 +140,7 @@ class CLIPVAD(nn.Module):
         self.text_layers = args.text_layers
         self.device = device
 
-        self.lstm_h_size = 512
+        self.lstm_h_size = 512asdf
 
         self.mlp1 = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(self.visual_width, self.visual_width * 4)),
