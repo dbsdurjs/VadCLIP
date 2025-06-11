@@ -8,6 +8,7 @@ from clip import clip
 from utils.layers import GraphConvolution, DistanceAdj
 from collections import OrderedDict
 from einops import repeat
+from pytorch_tcn import TCN
 
 class LayerNorm(nn.LayerNorm):
 
@@ -140,7 +141,7 @@ class CLIPVAD(nn.Module):
         self.text_layers = args.text_layers
         self.device = device
 
-        self.lstm_h_size = 512asdf
+        self.lstm_h_size = 512
 
         self.mlp1 = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(self.visual_width, self.visual_width * 4)),
@@ -162,8 +163,11 @@ class CLIPVAD(nn.Module):
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
         self.caption_embeddings = nn.Embedding(self.visual_width+1, self.visual_width) # add idea66-6
         
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.text_dim, nhead=self.text_head)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.text_layers)
+        # self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.text_dim, nhead=self.text_head)
+        # self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.text_layers)
+
+        self.self_attn = nn.MultiheadAttention(embed_dim=self.text_dim, num_heads=self.text_head)
+        # self.text_tcn = TCN()
 
         self.temporal = Transformer(
             width=self.visual_width,
@@ -252,7 +256,8 @@ class CLIPVAD(nn.Module):
         cls_token_cap = cls_token_cap + frame_position_embeddings[:, 0].unsqueeze(1)
         caption_feat = caption.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
         
-        x = self.transformer_encoder(caption_feat) # cls token 제외 encoder 입력
+        # x = self.transformer_encoder(caption_feat) # cls token 제외 encoder 입력
+        x = self.self_attn(caption_feat) + caption_feat
         x = torch.cat((cls_token_cap, x.permute(1, 0, 2)), dim=1)
 
         return x
