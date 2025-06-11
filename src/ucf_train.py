@@ -49,21 +49,19 @@ def CLAS2(logits, labels, lengths, device): # coarse grained
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
     return clsloss
 
-def kl_loss(c_visual_feat, c_caption_feat):
-    #   (a) caption → visual 방향
-    log_p_cap = F.log_softmax(c_caption_feat, dim=-1)  # log P_cap(i)
-    q_vis    = F.softmax(    c_visual_feat,  dim=-1)  # Q_vis(i)
-    kl_cap2vis = F.kl_div(log_p_cap, q_vis, reduction='batchmean')
+def caption_bce(caption_logits, labels, lengths, device):
+    instance_logits = torch.zeros(0).to(device)
+    labels = 1 - labels[:, 0].reshape(labels.shape[0])
+    labels = labels.to(device)
+    logits = torch.sigmoid(caption_logits).reshape(caption_logits.shape[0], caption_logits.shape[1])
 
-    #   (b) visual → caption 방향
-    log_p_vis = F.log_softmax(c_visual_feat,  dim=-1)  # log P_vis(i)
-    q_cap     = F.softmax(    c_caption_feat, dim=-1)  # Q_cap(i)
-    kl_vis2cap = F.kl_div(log_p_vis, q_cap, reduction='batchmean')
+    for i in range(logits.shape[0]):
+        tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
+        tmp = torch.mean(tmp).view(1)
+        instance_logits = torch.cat([instance_logits, tmp], dim=0)
 
-    #   (c) 총 KL Loss
-    kl_loss = kl_cap2vis + kl_vis2cap
-
-    return kl_loss
+    caption_loss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
+    return caption_loss
     
 def train(model, normal_loader, anomaly_loader, testloader, args, label_map, device):
     model.to(device)
@@ -92,7 +90,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         loss_total1 = 0
         loss_total2 = 0
         loss_total3 = 0
-        loss_total_kl = 0
+        loss_total_caption = 0
         total_loss = 0
 
         normal_iter = iter(normal_loader)
@@ -111,7 +109,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (128, 14)
 
-                text_features, logits1, logits2, c_visual_feat, c_caption_feat = model(visual_features, cap_features, None, prompt_text) # edit idea6-3
+                text_features, logits1, logits2, c_visual_feat, c_caption_feat, caption_logits = model(visual_features, cap_features, None, prompt_text) # edit idea6-3
                 
                 #loss1 - coarse grained
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device)
@@ -130,10 +128,10 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 loss3 = loss3 / 13 * 1e-1
                 loss_total3 += loss3.item()  
 
-                loss_kl = kl_loss(c_visual_feat, c_caption_feat)
-                loss_total_kl += loss_kl.item()
+                loss_caption = caption_bce(caption_logits, text_labels, feat_lengths, device)
+                loss_total_caption += loss_caption.item()
               
-                loss = loss1 + loss2 + loss3  + 0.5 * loss_kl
+                loss = loss1 + loss2 + loss3  + loss_caption
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -145,24 +143,24 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    loss_kl=f"{(0.5 * loss_total_kl / (i+1)):.4f}",
+                    loss_caption=f"{(loss_total_caption / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
-                pbar.update(1)f
+                pbar.update(1)
 
             # 에포크 손실 기록
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            epoch_loss_kl = 0.5 * loss_total_kl / (i+1)
+            epoch_loss_caption = loss_total_caption / (i+1)
             epoch_loss_total = total_loss / (i+1)
             
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            writer.add_scalar('loss_kl/train', epoch_loss_kl, e)
+            writer.add_scalar('loss_caption/train', loss_total_caption, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_kl: {epoch_loss_kl:.4f}, loss_total: {epoch_loss_total:.4f}')
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_caption: {epoch_loss_caption:.4f}, loss_total: {epoch_loss_total:.4f}')
 
             AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
@@ -214,7 +212,7 @@ if __name__ == '__main__':
     test_dataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
-    model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, args.batch_size, device)
+    model = CLIPVAD(args, device)
     # print(model)
     train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
     writer.close()

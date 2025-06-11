@@ -77,18 +77,13 @@ class CrossAttentionFusion(nn.Module):
             ]))
 
         self.mlp_head_cap = nn.Sequential(
-            nn.LayerNorm(fusion_dim),
+            # nn.LayerNorm(fusion_dim),
             nn.Linear(fusion_dim, fusion_dim)
         )
 
         self.mlp_head_vis = nn.Sequential(
-            nn.LayerNorm(fusion_dim),
+            # nn.LayerNorm(fusion_dim),
             nn.Linear(fusion_dim, fusion_dim)
-        )
-
-        self.mlp_head_fusion = nn.Sequential(
-            nn.LayerNorm(fusion_dim//2),
-            nn.Linear(fusion_dim//2, fusion_dim)
         )
 
     def forward(self, caption_feat, visual_feat):
@@ -118,42 +113,39 @@ class CrossAttentionFusion(nn.Module):
         cls_fusion_vis = fusion_vis[:, 0]
         cls_fusion_cap = fusion_cap[:, 0]
 
-        caption_features = self.mlp_head_cap(cls_fusion_cap) # batch, 512
-        visual_features = self.mlp_head_vis(cls_fusion_vis) # batch, 512
+        caption_features = self.mlp_head_cap(cls_fusion_cap) + cls_fusion_cap # batch, 512
+        visual_features = self.mlp_head_vis(cls_fusion_vis) + cls_fusion_vis # batch, 512
 
-        fusion_features = caption_features*0.3 + visual_features # batch, 512
+        fusion_features = caption_features + visual_features # batch, 512
 
-        return fusion_features, visual_features[:, 0], caption_features[:, 0]
+        return fusion_features, visual_features, caption_features
 
 class CLIPVAD(nn.Module):
-    def __init__(self,
-                 num_class: int,
-                 embed_dim: int,
-                 visual_length: int,
-                 visual_width: int,
-                 visual_head: int,
-                 visual_layers: int,
-                 attn_window: int,
-                 prompt_prefix: int,
-                 prompt_postfix: int,
-                 batch_size : int,
-                 device):
+    def __init__(self, args, device):
         super().__init__()
-
-        self.num_class = num_class
-        self.visual_length = visual_length  # 256
-        self.visual_width = visual_width    # 512
-        self.embed_dim = embed_dim
-        self.attn_window = attn_window
-        self.prompt_prefix = prompt_prefix
-        self.prompt_postfix = prompt_postfix
-        self.batch_size = batch_size # add cls token
+        self.num_class = args.classes_num
+        self.visual_length = args.visual_length  # 256
+        self.visual_width = args.visual_width    # 512
+        self.visual_layers = args.visual_layers
+        self.visual_head = args.visual_head
+        self.embed_dim = args.embed_dim
+        self.attn_window = args.attn_window
+        self.prompt_prefix = args.prompt_prefix
+        self.prompt_postfix = args.prompt_postfix
+        self.batch_size = args.batch_size # add cls token
+        self.lstm_nlayers = args.lstm_layer
+        self.cross_attn_head = args.cross_attn_head
+        self.text_head = args.text_head
+        self.text_dim = args.text_dim
+        self.text_layers = args.text_layers
         self.device = device
 
+        self.lstm_h_size = 512
+
         self.mlp1 = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(visual_width, visual_width * 4)),
+            ("c_fc", nn.Linear(self.visual_width, self.visual_width * 4)),
             ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(visual_width * 4, visual_width))
+            ("c_proj", nn.Linear(self.visual_width * 4, self.visual_width))
         ]))
 
         self.classifier = nn.Linear(512, 1)
@@ -162,26 +154,38 @@ class CLIPVAD(nn.Module):
         for clip_param in self.clipmodel.parameters():
             clip_param.requires_grad = False
 
-        self.lstm_h_size = 512
-        self.lstm_nlayers = 4
-        self.lstm = nn.LSTM(visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True, dropout=0.3) # 단방향 먼저, 양방향(output shape = hidden size *2)
-        self.batchnorms = nn.BatchNorm1d(self.lstm_h_size)
+        self.captioning_scale = nn.Parameter(torch.tensor(0.1, dtype=torch.float32))
+        self.lstm = nn.LSTM(self.visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True, dropout=0.3) # 단방향 먼저, 양방향(output shape = hidden size *2)
+        self.lstmnorms = nn.LayerNorm(self.lstm_h_size)
 
-        self.frame_position_embeddings = nn.Embedding(visual_length+1, visual_width)
+        self.frame_position_embeddings = nn.Embedding(self.visual_width+1, self.visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
-        self.caption_embeddings = nn.Embedding(visual_length+1, visual_width) # add idea66-6
+        self.caption_embeddings = nn.Embedding(self.visual_width+1, self.visual_width) # add idea66-6
         
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=visual_width, nhead=visual_head)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=visual_layers)
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.text_dim, nhead=self.text_head)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.text_layers)
 
+        self.temporal = Transformer(
+            width=self.visual_width,
+            layers=self.visual_layers,
+            heads=self.visual_head,
+            attn_mask=self.build_attention_mask(self.attn_window)
+        )
         self.cls_embeddings_caption = nn.Parameter(torch.randn(1, 1, self.visual_width)) # add cls token (batch*2, 1, 512)
         self.cls_embeddings_visual = nn.Parameter(torch.randn(1, 1, self.visual_width)) # add cls token (batch*2, 1, 512)
 
-        self.crossfusion = CrossAttentionFusion(fusion_dim=visual_width)
+        self.crossfusion = CrossAttentionFusion(fusion_dim=self.visual_width, num_heads=self.cross_attn_head)
 
         self.norm_final = nn.LayerNorm(512)
-        self.cross_attn_final = nn.MultiheadAttention(embed_dim=512, num_heads=8, dropout=0)
+        self.cross_attn_final = nn.MultiheadAttention(embed_dim=512, num_heads=self.cross_attn_head, dropout=0)
 
+        self.caption_classifier = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.LeakyReLU(),
+            nn.LayerNorm(256),
+            nn.Linear(256, 1),
+            nn.LeakyReLU()
+        )
         self.initialize_parameters()
 
     def initialize_parameters(self):
@@ -211,10 +215,12 @@ class CLIPVAD(nn.Module):
         images = images.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
 
         lstm_output, (_, _) = self.lstm(images)
-        out = self.batchnorms(lstm_output.permute(1, 2, 0)) # (batch, 512, 256)
- 
-        x = torch.cat((cls_token_vis, out.permute(0, 2, 1)), dim=1)
-        
+        out = self.lstmnorms(lstm_output.permute(1, 0, 2)) + images.permute(1, 0, 2) # (batch, 256, 512)
+
+        encoder_out, _ = self.temporal((out.permute(1, 0, 2), None)) # (256, batch, 512)
+        output = encoder_out.permute(1, 0, 2) + out
+        x = torch.cat((cls_token_vis, output), dim=1)
+         
         return x
 
     def encode_textprompt(self, text):
@@ -244,7 +250,7 @@ class CLIPVAD(nn.Module):
         frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 512)
         
         cls_token_cap = cls_token_cap + frame_position_embeddings[:, 0].unsqueeze(1)
-        caption_feat = caption.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (batch, 256, 512)
+        caption_feat = caption.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
         
         x = self.transformer_encoder(caption_feat) # cls token 제외 encoder 입력
         x = torch.cat((cls_token_cap, x.permute(1, 0, 2)), dim=1)
@@ -267,7 +273,8 @@ class CLIPVAD(nn.Module):
     def forward(self, visual, captioning, padding_mask, text): 
         cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
-        
+        # captioning = self.captioning_scale*captioning
+
         avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
         avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
 
@@ -280,8 +287,8 @@ class CLIPVAD(nn.Module):
         fusion_feat, c_visual_feat, c_caption_feat = self.crossfusion(caption_features, visual_features) # fusion feat(batch, 512)
         vis_fusion_feat = self.cls_attention(fusion_feat, visual_features)
 
-        # fusion_vis_feat = fusion_feat[:, 1:] + visual
-        # fusion_feat = torch.cat((fusion_feat[:, 0].unsqueeze(1), fusion_vis_feat), dim=1)
+        caption_logits = self.caption_classifier(caption_features)
+
         logits1 = self.classifier(vis_fusion_feat + self.mlp1(vis_fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
 
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
@@ -303,5 +310,5 @@ class CLIPVAD(nn.Module):
         
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 7)
 
-        return text_features_ori, logits1, logits2, c_visual_feat, c_caption_feat
+        return text_features_ori, logits1, logits2, c_visual_feat, c_caption_feat, caption_logits
     

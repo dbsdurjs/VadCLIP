@@ -70,7 +70,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     lengths[j] = length
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2, _, _ = model(visual, cap_features, padding_mask, prompt_text)
+            _, logits1, logits2, _, _, _ = model(visual, cap_features, padding_mask, prompt_text)
 
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2]) # (batch, 256, 1) -> (256, 1)
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2]) # (batch, 256, 14) -> (256, 14)
@@ -116,7 +116,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     AP2 = average_precision_score(gt, np.repeat(ap2, 16))   # softmax 방식(multi-class classification)
     
     if args.saved_video:
-        saved_test_video(args.gt_txt, video_names_list, element_logits2_stack, args.frame_base_folder, video_fps_list, prompt_text)
+        saved_test_video(args.gt_txt, video_names_list, element_logits2_stack, args.frame_base_folder, video_fps_list, prompt_text, args)
 
     # gt는 동영상 프레임에 대한 n/a를 나타냄 [0,0,0,1,1,...]
     # ROC1 : C-branch에서 직접 anomaly confidence를 구하는 법
@@ -133,7 +133,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     print('average MAP: {:.2f}'.format(averageMAP))
 
     if args.save_test_result:
-        save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, filename="../output/result_ucf.txt")
+        save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, args, filename="../output/result_ucf.txt")
 
     return ROC1, AP1, ROC2, AP2, averageMAP
 
@@ -152,7 +152,7 @@ if __name__ == '__main__':
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)
 
-    model = CLIPVAD(args.classes_num, args.embed_dim, args.visual_length, args.visual_width, args.visual_head, args.visual_layers, args.attn_window, args.prompt_prefix, args.prompt_postfix, args.batch_size, device)
+    model = CLIPVAD(args, device)
     model_param = torch.load(args.model_path)
     model.load_state_dict(model_param)
 

@@ -3,7 +3,7 @@ from vis import *
 import os
 import numpy as np
 
-def save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, filename):
+def save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, args, filename):
     result_filename = filename
     with open(result_filename, "a", encoding="utf-8") as file:
         # 현재 날짜 및 시간 가져오기
@@ -11,7 +11,8 @@ def save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, filename):
         date_str = now.strftime("%Y-%m-%d %H:%M:%S")
         
         # 지정한 형식으로 파일에 작성
-        file.write("----------------------------------------------------------------\n")
+        file.write(f"visual-head :{str(args.visual_head)}")
+        file.write("\n----------------------------------------------------------------\n")
         file.write(f"저장 날짜 : {date_str}\n")
         file.write(f"AUC1 : {ROC1:.4f}, AP1: {AP1:.4f}\n")
         file.write(f"AUC2 : {ROC2:.4f}, AP2: {AP2:.4f}\n")
