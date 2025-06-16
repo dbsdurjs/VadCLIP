@@ -19,6 +19,8 @@ parser.add_argument('--text-head', default=1, type=int) # 1일때 87.23%
 parser.add_argument('--lstm-layer', default=1, type=int) # 1일때 87.23%
 parser.add_argument('--cross-attn-head', default=1, type=int) # 1 - 87.23%, 5.67% | 2 - 87.11%, 6.27%
 
+parser.add_argument('--kernel', default=4, type=int) # 3 or 4에서 가장 좋음
+
 parser.add_argument('--max-epoch', default=10, type=int)
 parser.add_argument('--model-path', default='../vadclip_pth/model/model_ucf_caption.pth')
 parser.add_argument('--use-checkpoint', default=False, type=bool)

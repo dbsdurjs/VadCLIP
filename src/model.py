@@ -165,7 +165,7 @@ class CLIPVAD(nn.Module):
         self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.text_dim, nhead=self.text_head)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.text_layers)
 
-        # self.text_tcn = TCN()
+        self.text_tcn = TCN(num_inputs=512, num_channels=[512], kernel_size=args.kernel)
 
         self.temporal = Transformer(
             width=self.visual_width,
@@ -201,10 +201,10 @@ class CLIPVAD(nn.Module):
         )
 
         # self.mlp3_ffn = nn.Sequential(OrderedDict([
-        #     ("c_fc", nn.Linear(self.caption_dim, self.caption_dim * 4)),
-        #     ("gelu", QuickGELU()),
+        #     ("c_fc", nn.Linear(self.visual_width, self.visual_width * 4)),
+        #     ("gelu", nn.LeakyReLU()),
         #     ("dropout1", nn.Dropout()),
-        #     ("c_proj", nn.Linear(self.caption_dim * 4, self.caption_dim)),
+        #     ("c_proj", nn.Linear(self.visual_width * 4, self.visual_width)),
         #     ("dropout2", nn.Dropout()),
         # ]))
         # self.mlp3_norm = nn.LayerNorm(self.caption_dim)
@@ -273,9 +273,15 @@ class CLIPVAD(nn.Module):
         frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 512)
         
         cls_token_cap = cls_token_cap + frame_position_embeddings[:, 0].unsqueeze(1)
-        caption_feat = caption.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
+        caption_feat = caption + frame_position_embeddings[:, 1:] 
         
-        x = self.transformer_encoder(caption_feat) # cls token 제외 encoder 입력
+        # TCN 입력 준비: (batch, channels, sequence_length)로 변환
+        input_tcn = caption_feat.permute(0, 2, 1) # (batch, 512, 256)
+        x_tcn = self.text_tcn(input_tcn) + input_tcn # (batch, 512, 256)
+
+        input_enc = x_tcn.permute(2, 0, 1)
+        x = self.transformer_encoder(input_enc) + input_enc # cls token 제외 encoder 입력
+
         x = torch.cat((cls_token_cap, x.permute(1, 0, 2)), dim=1)
 
         return x
@@ -289,9 +295,9 @@ class CLIPVAD(nn.Module):
 
         vis_fusion_feat, _ = self.cross_attn_final(visual_feat.permute(1, 0, 2), fusion_query.permute(1, 0, 2), fusion_query.permute(1, 0, 2)) # 256, batch, 512
         vis_fusion_feat = vis_fusion_feat.permute(1, 0, 2)
-        vis_fusion_feat = vis_fusion_feat + visual_feat
+        vis_fusion_feat = vis_fusion_feat + visual_feat # 추가 무조건 해야함(성능 차이 심함)
 
-        # final_feat = self.norm_final3(self.cls_attn_ffn(vis_fusion_feat) + vis_fusion_feat)
+        # final_feat = self.cls_attn_ffn(vis_fusion_feat) + vis_fusion_feat
 
         return vis_fusion_feat
     
@@ -300,10 +306,10 @@ class CLIPVAD(nn.Module):
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
         # captioning = self.captioning_scale*captioning
 
-        avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
+        # avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
         # avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
 
-        cls_token_cap = cls_token_cap + avg_cap
+        # cls_token_cap = cls_token_cap + avg_cap
         # cls_token_vis = cls_token_vis + avg_vis
 
         caption_features = self.encode_caption(captioning, cls_token_cap) # batch, 256+1, 512

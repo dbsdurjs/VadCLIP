@@ -183,7 +183,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 
             scheduler.step()
         
-        torch.save(model.state_dict(), '../vadclip_pth/model/model_cur.pth')
+        # torch.save(model.state_dict(), '../vadclip_pth/model/model_cur.pth')
         checkpoint = torch.load(args.checkpoint_path)
         model.load_state_dict(checkpoint['model_state_dict'])
 
