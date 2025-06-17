@@ -291,7 +291,7 @@ class CLIPVAD(nn.Module):
 
         logits1 = self.classifier(vis_fusion_feat + self.mlp1(vis_fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
 
-        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
+        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + te                      xt), (14,77, 512) -> (14, 512)
 
         text_features = text_features_ori
         logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256)
