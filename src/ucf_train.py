@@ -129,6 +129,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 loss_total3 += loss3.item()  
 
                 loss_caption = caption_bce(caption_logits, text_labels, feat_lengths, device)
+                loss_caption *= 2
                 loss_total_caption += loss_caption.item()
               
                 loss = loss1 + loss2 + loss3  + loss_caption

@@ -77,12 +77,10 @@ class CrossAttentionFusion(nn.Module):
             ]))
 
         self.mlp_head_cap = nn.Sequential(
-            # nn.LayerNorm(fusion_dim),
             nn.Linear(fusion_dim, fusion_dim)
         )
 
         self.mlp_head_vis = nn.Sequential(
-            # nn.LayerNorm(fusion_dim),
             nn.Linear(fusion_dim, fusion_dim)
         )
 
@@ -177,7 +175,15 @@ class CLIPVAD(nn.Module):
         self.crossfusion = CrossAttentionFusion(fusion_dim=self.visual_width, num_heads=self.cross_attn_head)
 
         self.norm_final = nn.LayerNorm(512)
-        self.cross_attn_final = nn.MultiheadAttention(embed_dim=512, num_heads=self.cross_attn_head, dropout=0)
+        # self.cross_attn_final = nn.MultiheadAttention(embed_dim=512, num_heads=self.cross_attn_head, dropout=0)
+        self.temp_mlp = nn.Sequential(
+            nn.Linear(1024, 768),
+            QuickGELU(),
+            # nn.Dropout(),
+            nn.Linear(768, 512),
+            QuickGELU(),
+            # nn.Dropout()
+        )
 
         self.caption_classifier = nn.Sequential(
             nn.Linear(512, 256),
@@ -186,6 +192,15 @@ class CLIPVAD(nn.Module):
             nn.Linear(256, 1),
             nn.LeakyReLU()
         )
+
+        self.mlp3_ffn = nn.Sequential(OrderedDict([
+            ("c_fc", nn.Linear(1024, 1024 * 4)),
+            ("gelu", QuickGELU()),
+            ("dropout1", nn.Dropout()),
+            ("c_proj", nn.Linear(1024 * 4, 1024)),
+            ("dropout2", nn.Dropout()),
+        ]))
+
         self.initialize_parameters()
 
     def initialize_parameters(self):
@@ -261,19 +276,18 @@ class CLIPVAD(nn.Module):
 
         visual_feat = visual_feat[:, 1:] # batch, 256, 512
         cls_token = cls_token.unsqueeze(1) # batch, 1, 512
-        fusion_query = cls_token.expand(cls_token.shape[0], visual_feat.shape[1], cls_token.shape[2]) # batch, 256, 512
-        fusion_query = self.norm_final(fusion_query)
+        fusion_feat = cls_token.expand(cls_token.shape[0], visual_feat.shape[1], cls_token.shape[2]) # batch, 256, 512
+        fusion_feat = self.norm_final(fusion_feat)
 
-        vis_fusion_feat, _ = self.cross_attn_final(visual_feat.permute(1, 0, 2), fusion_query.permute(1, 0, 2), fusion_query.permute(1, 0, 2)) # 256, batch, 512
-        vis_fusion_feat = vis_fusion_feat.permute(1, 0, 2)
-        vis_fusion_feat = vis_fusion_feat + visual_feat
+        vis_fusion_feat = torch.cat((visual_feat, fusion_feat), dim=-1)
+        vis_fusion_feat = self.mlp3_ffn(vis_fusion_feat)
+        vis_fusion_feat = self.temp_mlp(vis_fusion_feat) + visual_feat
 
         return vis_fusion_feat
     
     def forward(self, visual, captioning, padding_mask, text): 
         cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
-        # captioning = self.captioning_scale*captioning
 
         avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
         avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
