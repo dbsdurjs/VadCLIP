@@ -165,8 +165,6 @@ class CLIPVAD(nn.Module):
         self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.text_dim, nhead=self.text_head)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.text_layers)
 
-        # self.text_tcn = TCN()
-
         self.temporal = Transformer(
             width=self.visual_width,
             layers=self.visual_layers,
@@ -179,36 +177,15 @@ class CLIPVAD(nn.Module):
         self.crossfusion = CrossAttentionFusion(fusion_dim=self.visual_width, num_heads=self.cross_attn_head)
 
         self.norm_final = nn.LayerNorm(self.visual_width)
-        self.norm_final2 = nn.LayerNorm(self.visual_width)
-        self.norm_final3 = nn.LayerNorm(self.visual_width)
-
-        self.cls_attn_ffn = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(self.visual_width, self.visual_width * 4)),
-            ("gelu", QuickGELU()),
-            ("dropout1", nn.Dropout(0.1)),
-            ("c_proj", nn.Linear(self.visual_width * 4, self.visual_width)),
-            ("dropout2", nn.Dropout(0.1)),
-        ]))
-
         self.cross_attn_final = nn.MultiheadAttention(embed_dim=512, num_heads=self.cross_attn_head, dropout=0)
 
         self.caption_classifier = nn.Sequential(
             nn.Linear(512, 256),
-            nn.LeakyReLU(),
+            QuickGELU(),
             nn.LayerNorm(256),
             nn.Linear(256, 1),
-            nn.LeakyReLU()
+            QuickGELU()
         )
-
-        # self.mlp3_ffn = nn.Sequential(OrderedDict([
-        #     ("c_fc", nn.Linear(self.caption_dim, self.caption_dim * 4)),
-        #     ("gelu", QuickGELU()),
-        #     ("dropout1", nn.Dropout()),
-        #     ("c_proj", nn.Linear(self.caption_dim * 4, self.caption_dim)),
-        #     ("dropout2", nn.Dropout()),
-        # ]))
-        # self.mlp3_norm = nn.LayerNorm(self.caption_dim)
-
         self.initialize_parameters()
 
     def initialize_parameters(self):
