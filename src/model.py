@@ -148,6 +148,22 @@ class CLIPVAD(nn.Module):
             ("c_proj", nn.Linear(self.visual_width * 4, self.visual_width))
         ]))
 
+        self.temporal = Transformer(
+            width=self.visual_width,
+            layers=self.visual_layers,
+            heads=self.visual_head,
+            attn_mask=self.build_attention_mask(self.attn_window)
+        )
+
+        width = int(self.visual_width / 2)
+        self.gc1 = GraphConvolution(self.visual_width, width, residual=True)
+        self.gc2 = GraphConvolution(width, width, residual=True)
+        self.gc3 = GraphConvolution(self.visual_width, width, residual=True)
+        self.gc4 = GraphConvolution(width, width, residual=True)
+        self.disAdj = DistanceAdj()
+        self.linear = nn.Linear(self.visual_width, self.visual_width)
+        self.gelu = QuickGELU()
+
         self.classifier = nn.Linear(512, 1)
 
         self.clipmodel, _ = clip.load("ViT-B/16", device)
@@ -206,21 +222,73 @@ class CLIPVAD(nn.Module):
 
         return mask
 
-    def encode_video_lstm(self, images, cls_token_vis):
-        images = images.to(torch.float) # (batch size, 256, 512)
+    def adj4(self, x, seq_len):
+        soft = nn.Softmax(1)
+        x2 = x.matmul(x.permute(0, 2, 1)) # B*T*T
+        x_norm = torch.norm(x, p=2, dim=2, keepdim=True)  # B*T*1
+        x_norm_x = x_norm.matmul(x_norm.permute(0, 2, 1))
+        x2 = x2/(x_norm_x+1e-20)
+        output = torch.zeros_like(x2)
+        if seq_len is None:
+            for i in range(x.shape[0]):
+                tmp = x2[i]
+                adj2 = tmp
+                adj2 = F.threshold(adj2, 0.7, 0)
+                adj2 = soft(adj2)
+                output[i] = adj2
+        else:
+            for i in range(len(seq_len)):
+                tmp = x2[i, :seq_len[i], :seq_len[i]]
+                adj2 = tmp
+                adj2 = F.threshold(adj2, 0.7, 0)
+                adj2 = soft(adj2)
+                output[i, :seq_len[i], :seq_len[i]] = adj2
+
+        return output
+
+    def encode_video(self, images, padding_mask, lengths, cls_token_vis):  # LGT Adapter
+        images = images.to(torch.float)
         position_ids = torch.arange(self.visual_length+1, device=self.device)
-        position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)    # (batch size,256+1)
-        frame_position_embeddings = self.frame_position_embeddings(position_ids)    # (batch size, 256+1, 512)
+        position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1) # (batch, 256)
+        frame_position_embeddings = self.frame_position_embeddings(position_ids)
         cls_token_vis = cls_token_vis + frame_position_embeddings[:, 0].unsqueeze(1)
         images = images.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
 
-        lstm_output, (_, _) = self.lstm(images)
-        out = self.lstmnorms(lstm_output.permute(1, 0, 2)) + images.permute(1, 0, 2) # (batch, 256, 512)
+        # x, _ = self.temporal((images, None))    # local module(clip img features)
+        # x = x.permute(1, 0, 2)
 
-        encoder_out, _ = self.temporal((out.permute(1, 0, 2), None)) # (256, batch, 512)
-        output = encoder_out.permute(1, 0, 2) + out
-        x = torch.cat((cls_token_vis, output), dim=1)
-         
+        # # global module()
+        # adj = self.adj4(x, lengths) # H_sim
+        # disadj = self.disAdj(x.shape[0], x.shape[1])    # H_dis
+        # x1_h = self.gelu(self.gc1(x, adj))
+        # x2_h = self.gelu(self.gc3(x, disadj))
+
+        # x1 = self.gelu(self.gc2(x1_h, adj))
+        # x2 = self.gelu(self.gc4(x2_h, disadj))
+
+        # x = torch.cat((x1, x2), 2)
+        # x = self.linear(x)  # X_g -> X (batch, 256, 512)
+
+        # x = torch.cat((cls_token_vis, x), dim=1)
+        # ======================================================= 위는 지역 -> 전역, 아래는 전역 -> 지역
+
+        # global module()
+        in_gcn = images.permute(1, 0, 2)
+
+        adj = self.adj4(in_gcn, lengths) # H_sim
+        disadj = self.disAdj(in_gcn.shape[0], in_gcn.shape[1])    # H_dis
+        x1_h = self.gelu(self.gc1(in_gcn, adj))
+        x2_h = self.gelu(self.gc3(in_gcn, disadj))
+
+        x1 = self.gelu(self.gc2(x1_h, adj))
+        x2 = self.gelu(self.gc4(x2_h, disadj))
+
+        x = torch.cat((x1, x2), 2)
+        out_gcn = self.linear(x)  # X_g -> X (batch, 256, 512)
+
+        out_en, _ = self.temporal((out_gcn.permute(1, 0, 2), None))    # local module(clip img features)
+        x = out_en.permute(1, 0, 2)
+
         return x
 
     def encode_textprompt(self, text):
@@ -270,7 +338,7 @@ class CLIPVAD(nn.Module):
 
         return vis_fusion_feat
     
-    def forward(self, visual, captioning, padding_mask, text): 
+    def forward(self, visual, captioning, padding_mask, lengths, text): 
         cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
         # captioning = self.captioning_scale*captioning
@@ -282,7 +350,7 @@ class CLIPVAD(nn.Module):
         cls_token_vis = cls_token_vis + avg_vis
 
         caption_features = self.encode_caption(captioning, cls_token_cap) # batch, 256+1, 512
-        visual_features = self.encode_video_lstm(visual, cls_token_vis)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
+        visual_features = self.encode_video(visual, padding_mask, lengths, cls_token_vis)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
 
         fusion_feat, c_visual_feat, c_caption_feat = self.crossfusion(caption_features, visual_features) # fusion feat(batch, 512)
         vis_fusion_feat = self.cls_attention(fusion_feat, visual_features)
