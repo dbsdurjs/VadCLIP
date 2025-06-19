@@ -272,23 +272,15 @@ class CLIPVAD(nn.Module):
     
     def forward(self, visual, captioning, padding_mask, text): 
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
-        # captioning = self.captioning_scale*captioning
 
-        avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
         avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
 
-        cls_token_cap = cls_token_cap + avg_cap
         cls_token_vis = cls_token_vis + avg_vis
 
-        caption_features = self.encode_caption(captioning, cls_token_cap) # batch, 256+1, 512
         visual_features = self.encode_video_lstm(visual, cls_token_vis)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
 
-        fusion_feat, c_visual_feat, c_caption_feat = self.crossfusion(caption_features, visual_features) # fusion feat(batch, 512)
-        vis_fusion_feat = self.cls_attention(fusion_feat, visual_features)
 
-        caption_logits = self.caption_classifier(caption_features)
-
-        logits1 = self.classifier(vis_fusion_feat + self.mlp1(vis_fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
+        logits1 = self.classifier(visual_features + self.mlp1(visual_features)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
 
         text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + te                      xt), (14,77, 512) -> (14, 512)
 
