@@ -271,7 +271,6 @@ class CLIPVAD(nn.Module):
         return vis_fusion_feat
     
     def forward(self, visual, captioning, padding_mask, text): 
-        cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
         # captioning = self.captioning_scale*captioning
 
