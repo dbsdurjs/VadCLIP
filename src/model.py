@@ -83,6 +83,22 @@ class CLIPVAD(nn.Module):
             ("c_proj", nn.Linear(self.visual_width * 4, self.visual_width))
         ]))
 
+        width = int(self.visual_width / 2)
+        self.gc1 = GraphConvolution(self.visual_width, width, residual=True)
+        self.gc2 = GraphConvolution(width, width, residual=True)
+        self.gc3 = GraphConvolution(self.visual_width, width, residual=True)
+        self.gc4 = GraphConvolution(width, width, residual=True)
+        self.disAdj = DistanceAdj()
+        self.linear = nn.Linear(self.visual_width, self.visual_width)
+        self.gelu = QuickGELU()
+
+        self.temporal = Transformer(
+            width=self.visual_width,
+            layers=self.visual_layers,
+            heads=self.visual_head,
+            attn_mask=self.build_attention_mask(self.attn_window)
+        )
+
         self.classifier = nn.Linear(512, 1)
 
         self.clipmodel, _ = clip.load("ViT-B/16", device)
@@ -122,23 +138,54 @@ class CLIPVAD(nn.Module):
 
         return mask
 
-    def encode_video_lstm(self, images, cls_token_vis):
-        images = images.to(torch.float) # (batch size, 256, 512)
-        position_ids = torch.arange(self.visual_length+1, device=self.device)
-        position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)    # (batch size,256+1)
-        frame_position_embeddings = self.frame_position_embeddings(position_ids)    # (batch size, 256+1, 512)
-        cls_token_vis = cls_token_vis + frame_position_embeddings[:, 0].unsqueeze(1)
-        images = images.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
+    def adj4(self, x, seq_len):
+        soft = nn.Softmax(1)
+        x2 = x.matmul(x.permute(0, 2, 1)) # B*T*T
+        x_norm = torch.norm(x, p=2, dim=2, keepdim=True)  # B*T*1
+        x_norm_x = x_norm.matmul(x_norm.permute(0, 2, 1))
+        x2 = x2/(x_norm_x+1e-20)
+        output = torch.zeros_like(x2)
+        if seq_len is None:
+            for i in range(x.shape[0]):
+                tmp = x2[i]
+                adj2 = tmp
+                adj2 = F.threshold(adj2, 0.7, 0)
+                adj2 = soft(adj2)
+                output[i] = adj2
+        else:
+            for i in range(len(seq_len)):
+                tmp = x2[i, :seq_len[i], :seq_len[i]]
+                adj2 = tmp
+                adj2 = F.threshold(adj2, 0.7, 0)
+                adj2 = soft(adj2)
+                output[i, :seq_len[i], :seq_len[i]] = adj2
 
-        lstm_output, (_, _) = self.lstm(images)
-        out = self.lstmnorms(lstm_output.permute(1, 0, 2)) + images.permute(1, 0, 2) # (batch, 256, 512)
+        return output
 
-        encoder_out, _ = self.temporal((out.permute(1, 0, 2), None)) # (256, batch, 512)
-        output = encoder_out.permute(1, 0, 2) + out
-        x = torch.cat((cls_token_vis, output), dim=1)
-         
+    def encode_video(self, images, padding_mask, lengths):  # LGT Adapter
+        images = images.to(torch.float)
+        position_ids = torch.arange(self.visual_length, device=self.device)
+        position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)
+        frame_position_embeddings = self.frame_position_embeddings(position_ids)
+        frame_position_embeddings = frame_position_embeddings.permute(1, 0, 2)
+        images = images.permute(1, 0, 2) + frame_position_embeddings
+
+        x, _ = self.temporal((images, None))    # local module(clip img features)
+        x = x.permute(1, 0, 2)
+
+        # global module()
+        adj = self.adj4(x, lengths) # H_sim
+        disadj = self.disAdj(x.shape[0], x.shape[1])    # H_dis
+        x1_h = self.gelu(self.gc1(x, adj))
+        x2_h = self.gelu(self.gc3(x, disadj))
+
+        x1 = self.gelu(self.gc2(x1_h, adj))
+        x2 = self.gelu(self.gc4(x2_h, disadj))
+
+        x = torch.cat((x1, x2), 2)
+        x = self.linear(x)  # X_g -> X
+
         return x
-
     def encode_textprompt(self, text):
         word_tokens = clip.tokenize(text).to(self.device)   # 클래스 토큰 생성, tokenizer(label), (14,77)
         word_embedding = self.clipmodel.encode_token(word_tokens)   # 클래스 토큰 임베딩, (14,77,512)
@@ -159,14 +206,8 @@ class CLIPVAD(nn.Module):
 
         return text_features
     
-    def forward(self, visual, padding_mask, text): 
-        cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
-
-        avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
-
-        cls_token_vis = cls_token_vis + avg_vis
-
-        visual_features = self.encode_video_lstm(visual, cls_token_vis)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
+    def forward(self, visual, padding_mask, feat_lengths, text): 
+        visual_features = self.encode_video(visual, padding_mask, feat_lengths)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
 
         logits1 = self.classifier(visual_features + self.mlp1(visual_features)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
 

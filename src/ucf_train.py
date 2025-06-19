@@ -108,7 +108,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (128, 14)
 
-                text_features, logits1, logits2 = model(visual_features, None, prompt_text) # edit idea6-3
+                text_features, logits1, logits2 = model(visual_features, None, feat_lengths, prompt_text) # edit idea6-3
                 
                 #loss1 - coarse grained
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device)

@@ -23,7 +23,7 @@
 # CUDA_VISIBLE_DEVICES=1 python src/xd_test.py --model-path '../vadclip_pth/model/model_xd_caption(server_exp16).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_xd_caption(server_exp16).pth' --visual-head=8 --using-caption --save-test-result
 
 
-# server 컴 실험, 세미나 대비 caption classifier 제거 실험
+# server 컴 실험, 세미나 대비 caption classifier 제거 실험 + LGT만 실험
 
 CUDA_VISIBLE_DEVICES=1 python src/xd_train.py --model-path='../vadclip_pth/model/model_xd_caption(server_exp16).pth' --checkpoint-path='../vadclip_pth/model/checkpoint_xd_caption(server_exp16).pth' --using-caption
 CUDA_VISIBLE_DEVICES=1 python src/xd_test.py --model-path '../vadclip_pth/model/model_xd_caption(server_exp16).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_xd_caption(server_exp16).pth' --using-caption --save-test-result
