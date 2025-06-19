@@ -49,19 +49,19 @@ def CLAS2(logits, labels, lengths, device): # coarse grained
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
     return clsloss
 
-def caption_bce(caption_logits, labels, lengths, device):
-    instance_logits = torch.zeros(0).to(device)
-    labels = 1 - labels[:, 0].reshape(labels.shape[0])
-    labels = labels.to(device)
-    logits = torch.sigmoid(caption_logits).reshape(caption_logits.shape[0], caption_logits.shape[1])
+# def caption_bce(caption_logits, labels, lengths, device):
+#     instance_logits = torch.zeros(0).to(device)
+#     labels = 1 - labels[:, 0].reshape(labels.shape[0])
+#     labels = labels.to(device)
+#     logits = torch.sigmoid(caption_logits).reshape(caption_logits.shape[0], caption_logits.shape[1])
 
-    for i in range(logits.shape[0]):
-        tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
-        tmp = torch.mean(tmp).view(1)
-        instance_logits = torch.cat([instance_logits, tmp], dim=0)
+#     for i in range(logits.shape[0]):
+#         tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
+#         tmp = torch.mean(tmp).view(1)
+#         instance_logits = torch.cat([instance_logits, tmp], dim=0)
 
-    caption_loss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
-    return caption_loss
+#     caption_loss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
+#     return caption_loss
     
 def train(model, normal_loader, anomaly_loader, testloader, args, label_map, device):
     model.to(device)
@@ -128,10 +128,10 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 loss3 = loss3 / 13 * 1e-1
                 loss_total3 += loss3.item()  
 
-                loss_caption = caption_bce(caption_logits, text_labels, feat_lengths, device)
-                loss_total_caption += loss_caption.item()
+                # loss_caption = caption_bce(caption_logits, text_labels, feat_lengths, device)
+                # loss_total_caption += loss_caption.item()
               
-                loss = loss1 + loss2 + loss3  + loss_caption
+                loss = loss1 + loss2 + loss3  #+ loss_caption
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -143,7 +143,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    loss_caption=f"{(loss_total_caption / (i+1)):.4f}",
+                    # loss_caption=f"{(loss_total_caption / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
                 pbar.update(1)
@@ -152,15 +152,15 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
             epoch_loss1 = loss_total1 / (i+1)
             epoch_loss2 = loss_total2 / (i+1)
             epoch_loss3 = loss_total3 / (i+1)
-            epoch_loss_caption = loss_total_caption / (i+1)
+            # epoch_loss_caption = loss_total_caption / (i+1)
             epoch_loss_total = total_loss / (i+1)
             
             writer.add_scalar('loss1/train', epoch_loss1, e)
             writer.add_scalar('loss2/train', epoch_loss2, e)
             writer.add_scalar('loss3/train', epoch_loss3, e)
-            writer.add_scalar('loss_caption/train', loss_total_caption, e)
+            # writer.add_scalar('loss_caption/train', loss_total_caption, e)
             writer.add_scalar('loss_total/train', epoch_loss_total, e)
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_caption: {epoch_loss_caption:.4f}, loss_total: {epoch_loss_total:.4f}')
+            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_total: {epoch_loss_total:.4f}') # , loss_caption: {epoch_loss_caption:.4f}
 
             AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
             
