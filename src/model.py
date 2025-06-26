@@ -154,7 +154,6 @@ class CLIPVAD(nn.Module):
         for clip_param in self.clipmodel.parameters():
             clip_param.requires_grad = False
 
-        self.captioning_scale = nn.Parameter(torch.tensor(0.1, dtype=torch.float32))
         self.lstm = nn.LSTM(self.visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True, dropout=0.3) # 단방향 먼저, 양방향(output shape = hidden size *2)
         self.lstmnorms = nn.LayerNorm(self.lstm_h_size)
 
@@ -162,8 +161,8 @@ class CLIPVAD(nn.Module):
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
         self.caption_embeddings = nn.Embedding(self.visual_width+1, self.visual_width) # add idea66-6
         
-        self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.text_dim, nhead=self.text_head)
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.text_layers)
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.visual_width, nhead=self.visual_head)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.visual_layers)
 
         self.temporal = Transformer(
             width=self.visual_width,
@@ -178,14 +177,6 @@ class CLIPVAD(nn.Module):
 
         self.norm_final = nn.LayerNorm(512)
         self.cross_attn_final = nn.MultiheadAttention(embed_dim=512, num_heads=self.cross_attn_head, dropout=0)
-
-        # self.caption_classifier = nn.Sequential(
-        #     nn.Linear(512, 256),
-        #     nn.LeakyReLU(),
-        #     nn.LayerNorm(256),
-        #     nn.Linear(256, 1),
-        #     nn.LeakyReLU()
-        # )
 
         self.mlp2 = nn.Linear(1024, 1)
         self.mlp_ffn = nn.Sequential(OrderedDict([
@@ -223,10 +214,11 @@ class CLIPVAD(nn.Module):
         images = images.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
 
         lstm_output, (_, _) = self.lstm(images)
-        out = self.lstmnorms(lstm_output.permute(1, 0, 2)) + images.permute(1, 0, 2) # (batch, 256, 512)
+        out = self.lstmnorms(lstm_output.permute(1, 0, 2)) #+ images.permute(1, 0, 2) # (batch, 256, 512)
 
         encoder_out, _ = self.temporal((out.permute(1, 0, 2), None)) # (256, batch, 512)
         output = encoder_out.permute(1, 0, 2) + out
+
         x = torch.cat((cls_token_vis, output), dim=1)
          
         return x
@@ -260,7 +252,6 @@ class CLIPVAD(nn.Module):
         cls_token_cap = cls_token_cap + frame_position_embeddings[:, 0].unsqueeze(1)
         caption_feat = caption + frame_position_embeddings[:, 1:] 
 
-        # x = self.transformer_encoder(caption_feat) # cls token 제외 encoder 입력
         x = torch.cat((cls_token_cap, caption_feat), dim=1)
 
         return x
@@ -276,22 +267,19 @@ class CLIPVAD(nn.Module):
         concat_feat = torch.cat((visual_feat, fusion_query), dim=-1)
 
         ffn_feat = self.mlp_ffn(concat_feat)
-        vis_fusion_feat = self.mlp2(ffn_feat)
-
-        vis_fusion_feat = vis_fusion_feat + visual_feat
+        vis_fusion_feat = self.mlp2(ffn_feat) + visual_feat
 
         return vis_fusion_feat
     
     def forward(self, visual, captioning, padding_mask, text): 
         cls_token_cap = repeat(self.cls_embeddings_caption, '() n d -> b n d', b = captioning.shape[0]) # (batch, 1, 512)
         cls_token_vis = repeat(self.cls_embeddings_visual, '() n d -> b n d', b = visual.shape[0]) # (batch, 1, 512)
-        # captioning = self.captioning_scale*captioning
 
-        # avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
-        # avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
+        avg_cap = captioning.mean(dim=1, keepdim=True)  # (batch, 1, D)
+        avg_vis = visual.mean(dim=1, keepdim=True)      # (batch, 1, D)
 
-        # cls_token_cap = cls_token_cap + avg_cap
-        # cls_token_vis = cls_token_vis + avg_vis
+        cls_token_cap = cls_token_cap + avg_cap
+        cls_token_vis = cls_token_vis + avg_vis
 
         caption_features = self.encode_caption(captioning, cls_token_cap) # batch, 256+1, 512
         visual_features = self.encode_video_lstm(visual, cls_token_vis)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
