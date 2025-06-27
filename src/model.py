@@ -214,10 +214,10 @@ class CLIPVAD(nn.Module):
         images = images.permute(1, 0, 2) + frame_position_embeddings[:, 1:].permute(1, 0, 2) # (256, batch, 512)
 
         lstm_output, (_, _) = self.lstm(images)
-        out = self.lstmnorms(lstm_output.permute(1, 0, 2)) #+ images.permute(1, 0, 2) # (batch, 256, 512)
+        lstm_output = self.lstmnorms(lstm_output.permute(1, 0, 2))
 
-        encoder_out, _ = self.temporal((out.permute(1, 0, 2), None)) # (256, batch, 512)
-        output = encoder_out.permute(1, 0, 2) + out
+        encoder_out, _ = self.temporal((lstm_output.permute(1, 0, 2), None)) # (256, batch, 512)
+        output = self.lstmnorms(encoder_out.permute(1, 0, 2))   
 
         x = torch.cat((cls_token_vis, output), dim=1)
          
@@ -263,7 +263,6 @@ class CLIPVAD(nn.Module):
         fusion_query = cls_token.expand(cls_token.shape[0], visual_feat.shape[1], cls_token.shape[2]) # batch, 256, 512
         fusion_query = self.norm_final(fusion_query)
 
-        # vis_fusion_feat, _ = self.cross_attn_final(visual_feat.permute(1, 0, 2), fusion_query.permute(1, 0, 2), fusion_query.permute(1, 0, 2)) # 256, batch, 512
         concat_feat = torch.cat((visual_feat, fusion_query), dim=-1)
 
         ffn_feat = self.mlp_ffn(concat_feat)
@@ -287,11 +286,9 @@ class CLIPVAD(nn.Module):
         fusion_feat = self.crossfusion(caption_features, visual_features) # fusion feat(batch, 512)
         vis_fusion_feat = self.cls_attention(fusion_feat, visual_features)
 
-        # caption_logits = self.caption_classifier(caption_features)
-
         logits1 = self.classifier(vis_fusion_feat + self.mlp1(vis_fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
 
-        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + te                      xt), (14,77, 512) -> (14, 512)
+        text_features_ori = self.encode_textprompt(text)    # clip text encoder(learnable prompt + text), (14,77, 512) -> (14, 512)
 
         text_features = text_features_ori
         logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256)

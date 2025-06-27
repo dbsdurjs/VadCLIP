@@ -91,7 +91,6 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
         loss_total1 = 0
         loss_total2 = 0
         loss_total3 = 0
-        loss_total_caption = 0
         total_loss = 0
 
         normal_iter = iter(normal_loader)
