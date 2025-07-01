@@ -154,8 +154,9 @@ class CLIPVAD(nn.Module):
         for clip_param in self.clipmodel.parameters():
             clip_param.requires_grad = False
 
-        self.lstm = nn.LSTM(self.visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True, dropout=0.3) # 단방향 먼저, 양방향(output shape = hidden size *2)
+        self.lstm = nn.LSTM(self.visual_width, hidden_size=self.lstm_h_size//2, num_layers=self.lstm_nlayers, bidirectional=True, dropout=0.3) # 양방향(output shape = hidden size *2)
         self.lstmnorms = nn.LayerNorm(self.lstm_h_size)
+        self.tempnorms = nn.LayerNorm(self.lstm_h_size)
 
         self.frame_position_embeddings = nn.Embedding(self.visual_width+1, self.visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
@@ -217,7 +218,7 @@ class CLIPVAD(nn.Module):
         lstm_output = self.lstmnorms(lstm_output.permute(1, 0, 2))
 
         encoder_out, _ = self.temporal((lstm_output.permute(1, 0, 2), None)) # (256, batch, 512)
-        output = self.lstmnorms(encoder_out.permute(1, 0, 2))   
+        output = self.tempnorms(encoder_out.permute(1, 0, 2))   
 
         x = torch.cat((cls_token_vis, output), dim=1)
          

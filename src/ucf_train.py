@@ -49,19 +49,23 @@ def CLAS2(logits, labels, lengths, device): # coarse grained
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
     return clsloss
 
-def caption_bce(caption_logits, labels, lengths, device):
-    instance_logits = torch.zeros(0).to(device)
-    labels = 1 - labels[:, 0].reshape(labels.shape[0])
-    labels = labels.to(device)
-    logits = torch.sigmoid(caption_logits).reshape(caption_logits.shape[0], caption_logits.shape[1])
+def refine_caption_vectorized(visual_feat, caption_feat):
+    """
+    visual_feat: (B, T, D)
+    caption_feat: (B, T, D)
+    return: refined_caption: (B, T, D)
+    """
+    B, T, D = visual_feat.shape
+    vis_norm = F.normalize(visual_feat, dim=-1)      # (B, 256, 512)
+    cap_norm = F.normalize(caption_feat, dim=-1)     
+    
+    sim_matrix = torch.bmm(vis_norm, cap_norm.transpose(1, 2))  # (B, 256, 256), cosine similarity 계산
 
-    for i in range(logits.shape[0]):
-        tmp, _ = torch.topk(logits[i, 0:lengths[i]], k=int(lengths[i] / 16 + 1), largest=True)
-        tmp = torch.mean(tmp).view(1)
-        instance_logits = torch.cat([instance_logits, tmp], dim=0)
+    idx = sim_matrix.argmax(dim=-1)  # (B, 256), 각 프레임마다 유사성이 높은 캡션 선택
 
-    caption_loss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
-    return caption_loss
+    refined = torch.gather(caption_feat, 1, idx.unsqueeze(-1).expand(-1, -1, D))  # (B, 256, 512)
+    
+    return refined
     
 def train(model, normal_loader, anomaly_loader, testloader, args, label_map, device):
     model.to(device)
@@ -85,6 +89,8 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         print("checkpoint info:")
         print("epoch:", epoch+1, " ap:", ap_best)
     
+    tensorboard_step = 0
+
     for e in range(args.max_epoch):
         model.train()
         loss_total1 = 0
@@ -98,15 +104,19 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
         
         with tqdm(total=min(len(normal_loader), len(anomaly_loader)), desc=f"Epoch {e+1}/{args.max_epoch}") as pbar:
             for i in range(min(len(normal_loader), len(anomaly_loader))):
+                step = 0
                 normal_features, normal_label, normal_lengths, normal_cap_features, normal_cap_lengths, _, _, _ = next(normal_iter) # normal_label batch size, normal features : torch.Size([64, 256, 512])
                 anomaly_features, anomaly_label, anomaly_lengths, anomaly_cap_features, anomaly_cap_lengths, _,  _, _ = next(anomaly_iter)   # anomaly_label batch size, anomaly features : torch.Size([64, 256, 512])
 
                 visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # 128,256,1024
                 cap_features = torch.cat([normal_cap_features, anomaly_cap_features], dim=0).to(device) # add idea6-3
 
+                if e == 0 and i ==0 :
+                    print('caption refine!!!!!!!!!!')
+                    cap_features = refine_caption_vectorized(visual_features, cap_features)
+
                 text_labels = list(normal_label) + list(anomaly_label)
                 feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
-                cap_feat_lengths = torch.cat([normal_cap_lengths, anomaly_cap_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (128, 14)
 
                 text_features, logits1, logits2 = model(visual_features, cap_features, None, prompt_text) # edit idea6-3
@@ -127,9 +137,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                     loss3 += torch.abs(text_feature_normal @ text_feature_abr)
                 loss3 = loss3 / 13 * 1e-1
                 loss_total3 += loss3.item()  
-
-                # loss_caption = caption_bce(caption_logits, text_labels, feat_lengths, device)
-                # loss_total_caption += loss_caption.item()
               
                 loss = loss1 + loss2 + loss3
                 total_loss += loss.item()
@@ -138,54 +145,54 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 loss.backward()
                 optimizer.step()
 
-               # tqdm 업데이트 및 정보 추가
+                # tqdm 업데이트 및 정보 추가
                 pbar.set_postfix(
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
-                    # loss_caption=f"{(loss_total_caption / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
-                pbar.update(1)
+                pbar.update(1) # tqdm은 매 step마다 기록
+                tensorboard_step += 1
+                step += i * normal_loader.batch_size * 2
+                if step % 1280 == 0 and step != 0: # tensorboard는 주기적인 step마다 기록
+                    step_loss1 = loss_total1 / (i+1)
+                    step_loss2 = loss_total2 / (i+1)
+                    step_loss3 = loss_total3 / (i+1)
+                    step_loss_total = total_loss / (i+1)
+                    
+                    writer.add_scalar('loss1/train', step_loss1, tensorboard_step)
+                    writer.add_scalar('loss2/train', step_loss2, tensorboard_step)
+                    writer.add_scalar('loss3/train', step_loss3, tensorboard_step)
+                    writer.add_scalar('loss_total/train', step_loss_total, tensorboard_step)
 
-            # 에포크 손실 기록
-            epoch_loss1 = loss_total1 / (i+1)
-            epoch_loss2 = loss_total2 / (i+1)
-            epoch_loss3 = loss_total3 / (i+1)
-            # epoch_loss_caption = loss_total_caption / (i+1)
-            epoch_loss_total = total_loss / (i+1)
-            
-            writer.add_scalar('loss1/train', epoch_loss1, e)
-            writer.add_scalar('loss2/train', epoch_loss2, e)
-            writer.add_scalar('loss3/train', epoch_loss3, e)
-            # writer.add_scalar('loss_caption/train', loss_total_caption, e)
-            writer.add_scalar('loss_total/train', epoch_loss_total, e)
-            print(f'epoch: {e+1}, loss1: {epoch_loss1:.4f}, loss2: {epoch_loss2:.4f}, loss3: {epoch_loss3:.4f}, loss_total: {epoch_loss_total:.4f}') #, loss_caption: {epoch_loss_caption:.4f}
-            
-            AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
-            
-            test_acc1 = {'AUC1':AUC, 'AP1':AP}
-            test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
-            
-            writer.add_scalars('test_acc1/test_accuracy', test_acc1, e)
-            writer.add_scalars('test_acc2/test_accuracy', test_acc2, e)
-            writer.add_scalar('average mAP/test_accuracy', average_mAP, e)
-            AP = AUC
+                    print(f'epoch: {e+1}, loss1: {step_loss1:.4f}, loss2: {step_loss2:.4f}, loss3: {step_loss3:.4f}, loss_total: {step_loss_total:.4f}')
 
-            if AP > ap_best:
-                ap_best = AP 
-                checkpoint = {
-                    'epoch': e,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'ap': ap_best}
-                torch.save(checkpoint, args.checkpoint_path)
+                    AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
                 
+                    test_acc1 = {'AUC1':AUC, 'AP1':AP}
+                    test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
+                    
+                    writer.add_scalars('test_acc1/test_accuracy', test_acc1, tensorboard_step)
+                    writer.add_scalars('test_acc2/test_accuracy', test_acc2, tensorboard_step)
+                    writer.add_scalar('average mAP/test_accuracy', average_mAP, tensorboard_step)
+                    AP = AUC
+
+                    if AP > ap_best:
+                        ap_best = AP 
+                        checkpoint = {
+                            'epoch': e,
+                            'model_state_dict': model.state_dict(),
+                            'optimizer_state_dict': optimizer.state_dict(),
+                            'ap': ap_best}
+                        torch.save(checkpoint, args.checkpoint_path)
+                    model.train()
+            
             scheduler.step()
         
-        torch.save(model.state_dict(), '../vadclip_pth/model/model_cur.pth')
-        checkpoint = torch.load(args.checkpoint_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
+            # torch.save(model.state_dict(), '../vadclip_pth/model/model_cur.pth')
+            # checkpoint = torch.load(args.checkpoint_path)
+            # model.load_state_dict(checkpoint['model_state_dict'])
 
     checkpoint = torch.load(args.checkpoint_path)
     torch.save(checkpoint['model_state_dict'], args.model_path)
