@@ -111,12 +111,12 @@ class CrossAttentionFusion(nn.Module):
             fusion_vis = torch.cat((vis_patches, vis_out), dim=1)
 
         cls_fusion_vis = fusion_vis[:, 0]
-        cls_fusion_cap = fusion_cap[:, 0]
+        # cls_fusion_cap = fusion_cap[:, 0]
 
-        caption_features = self.mlp_head_cap(cls_fusion_cap) + cls_fusion_cap # batch, 512
-        visual_features = self.mlp_head_vis(cls_fusion_vis) + cls_fusion_vis # batch, 512
+        # caption_features = self.mlp_head_cap(cls_fusion_cap) # batch, 512
+        visual_features = self.mlp_head_vis(cls_fusion_vis) # batch, 512
 
-        fusion_features = caption_features + visual_features # batch, 512
+        fusion_features = visual_features # batch, 512
 
         return fusion_features
     

@@ -174,7 +174,6 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                     writer.add_scalars('test_acc1/test_accuracy', test_acc1, tensorboard_step)
                     writer.add_scalars('test_acc2/test_accuracy', test_acc2, tensorboard_step)
                     writer.add_scalar('average mAP/test_accuracy', average_mAP, tensorboard_step)
-                    AP = AUC
 
                     if AP > ap_best:
                         ap_best = AP 
