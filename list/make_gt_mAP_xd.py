@@ -8,7 +8,7 @@ import warnings
 clip_len = 16
 
 # the dir of testing images
-feature_list = 'list/xd_CLIP_rgbtest.csv'
+feature_list = 'list/xd_rgbtest_I3D.csv'
 
 # the ground truth txt
 gt_txt = 'list/annotations_multiclasses.txt'
@@ -45,6 +45,9 @@ for idx in range(lists.shape[0]):
                 break
     gt_segment.append(segment)
     gt_label.append(label)
-print(len(gt_segment))
+
 # np.save('list/gt_label.npy', gt_label)
 # np.save('list/gt_segment.npy', gt_segment)
+print(f"gt label shape {len(gt_label)}, gt segment shape {len(gt_segment)}")
+np.save('list/gt_label_xd_I3D.npy', np.array(gt_label, dtype=object))
+np.save('list/gt_segment_xd_I3D.npy', np.array(gt_segment, dtype=object))

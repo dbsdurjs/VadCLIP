@@ -5,7 +5,7 @@ import cv2
 clip_len = 16
 
 # the dir of testing images
-feature_list = 'list/ucf_CLIP_rgbtest_10videos.csv'
+feature_list = 'list/ucf_rgbtest_I3D.csv'
 # the ground truth txt
 
 gt_txt = 'list/Temporal_Anomaly_Annotation.txt'     ## the path of test annotations
@@ -44,5 +44,5 @@ for idx in range(lists.shape[0]):
                 break
     gt.extend(gt_vec[:-clip_len]) # 추가된 clip_len 길이의 프레임을 없앰
 
-# print(count)
-# np.save('list/gt_ucf_10videos.npy', gt)
+print(len(gt))
+np.save('list/gt_ucf_I3D.npy', gt)

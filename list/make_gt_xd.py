@@ -5,7 +5,7 @@ import cv2
 clip_len = 16
 
 # the dir of testing images
-feature_list = 'list/xd_CLIP_rgbtest.csv'
+feature_list = 'list/xd_rgbtest_I3D.csv'
 # the ground truth txt
 
 gt_txt = 'list/annotations.txt'     ## the path of test annotations
@@ -40,6 +40,6 @@ for idx in range(lists.shape[0]):
                 break
     gt.extend(gt_vec[:-clip_len])
 
-np.save('list/gt_xd.npy', gt)
+print(len(gt))
+np.save('list/gt_xd_I3D.npy', gt)
 
-print(count)

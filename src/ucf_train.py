@@ -85,7 +85,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)   # anomaly gt 구간
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)   # 클래스 gt(normal : A, Abuse, Arrest..)
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-1)
 
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
@@ -141,19 +141,19 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 loss2 = CLASM(logits2, text_labels, feat_lengths, device) # logits2 shape (128, 256, 14)
                 loss_total2 += loss2.item()
 
-                #loss3
-                loss3 = torch.zeros(1).to(device)
-                text_feature_normal = text_features[0] / text_features[0].norm(dim=-1, keepdim=True)
-                for j in range(1, text_features.shape[0]):
-                    text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
-                    loss3 += torch.abs(text_feature_normal @ text_feature_abr)
-                loss3 = loss3 / 13 * 1e-1
-                loss_total3 += loss3.item()  
+                # #loss3
+                # loss3 = torch.zeros(1).to(device)
+                # text_feature_normal = text_features[0] / text_features[0].norm(dim=-1, keepdim=True)
+                # for j in range(1, text_features.shape[0]):
+                #     text_feature_abr = text_features[j] / text_features[j].norm(dim=-1, keepdim=True)
+                #     loss3 += torch.abs(text_feature_normal @ text_feature_abr)
+                # loss3 = loss3 / 13 * 1e-1
+                # loss_total3 += loss3.item()  
 
                 loss4 = pmg_loss_txt_only(approxi_features, cap_features)
                 loss_total4 += loss4.item()
               
-                loss = loss1 + loss2 + loss3 + loss4
+                loss = loss1 + loss2 + loss4
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -164,7 +164,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 pbar.set_postfix(
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
-                    loss3=f"{(loss_total3 / (i+1)):.4f}",
+                    # loss3=f"{(loss_total3 / (i+1)):.4f}",
                     loss4=f"{(loss_total4 / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
@@ -174,17 +174,17 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 if step % 1280 == 0 and step != 0: # tensorboard는 주기적인 step마다 기록
                     step_loss1 = loss_total1 / (i+1)
                     step_loss2 = loss_total2 / (i+1)
-                    step_loss3 = loss_total3 / (i+1)
+                    # step_loss3 = loss_total3 / (i+1)
                     step_loss4 = loss_total4 / (i+1)
                     step_loss_total = total_loss / (i+1)
                     
                     writer.add_scalar('loss1/train', step_loss1, tensorboard_step)
                     writer.add_scalar('loss2/train', step_loss2, tensorboard_step)
-                    writer.add_scalar('loss3/train', step_loss3, tensorboard_step)
+                    # writer.add_scalar('loss3/train', step_loss3, tensorboard_step)
                     writer.add_scalar('loss4/train', step_loss4, tensorboard_step)
                     writer.add_scalar('loss_total/train', step_loss_total, tensorboard_step)
 
-                    print(f'epoch: {e+1}, loss1: {step_loss1:.4f}, loss2: {step_loss2:.4f}, loss3: {step_loss3:.4f}, loss4: {step_loss4:.4f}, loss_total: {step_loss_total:.4f}')
+                    print(f'epoch: {e+1}, loss1: {step_loss1:.4f}, loss2: {step_loss2:.4f}, loss4: {step_loss4:.4f}, loss_total: {step_loss_total:.4f}')
 
                     AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
                 

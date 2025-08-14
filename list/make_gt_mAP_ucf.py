@@ -7,7 +7,7 @@ import warnings
 
 clip_len = 16
 
-feature_list = 'list/ucf_CLIP_rgbtest_10videos.csv'
+feature_list = 'list/ucf_rgbtest_I3D.csv'
 
 # the ground truth txt
 gt_txt = 'list/Temporal_Anomaly_Annotation.txt'
@@ -50,5 +50,6 @@ for idx in range(lists.shape[0]):
 
 # np.save('list/gt_label_ucf.npy', gt_label, allow_pickle=True)
 # np.save('list/gt_segment_ucf.npy', gt_segment, allow_pickle=True)
-np.save('list/gt_label_ucf_10videos.npy', np.array(gt_label, dtype=object))
-np.save('list/gt_segment_ucf_10videos.npy', np.array(gt_segment, dtype=object))
+print(f"gt label shape {len(gt_label)}, gt segment shape {len(gt_segment)}")
+np.save('list/gt_label_ucf_I3D.npy', np.array(gt_label, dtype=object))
+np.save('list/gt_segment_ucf_I3D.npy', np.array(gt_segment, dtype=object))

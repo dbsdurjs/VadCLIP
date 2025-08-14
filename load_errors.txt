@@ -1,0 +1,1 @@
+../VAD_dataset/UCFClipFeatures_I3D/Normal_Videos502_x264__3.npy	cannot reshape array of size 8853472 into shape (61031,2048)

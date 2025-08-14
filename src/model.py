@@ -81,7 +81,9 @@ class CrossAttentionFusion(nn.Module):
         # )
 
         self.mlp_head_vis = nn.Sequential(
-            nn.Linear(fusion_dim, fusion_dim)
+            nn.Linear(fusion_dim, fusion_dim*4),
+            QuickGELU(),
+            nn.Linear(fusion_dim*4, fusion_dim)
         )
 
     def forward(self, caption_feat, visual_feat):
@@ -95,9 +97,9 @@ class CrossAttentionFusion(nn.Module):
 
             # 시각 → 캡션 Cross Attention
             attn_out_vis, _ = v_to_c(visual_feat.permute(1, 0, 2), caption_feat.permute(1, 0, 2), caption_feat.permute(1, 0, 2))
-            vis_out = norm_v(attn_out_vis.permute(1, 0, 2)) + visual_feat
+            vis_out = norm_v(attn_out_vis.permute(1, 0, 2))
 
-        visual_features = self.mlp_head_vis(vis_out) # batch, 512
+        visual_features = self.mlp_head_vis(vis_out) + vis_out # batch, 512
 
         fusion_features = visual_features # batch, 512
 
@@ -143,10 +145,12 @@ class CLIPVAD(nn.Module):
 
         self.frame_position_embeddings = nn.Embedding(self.visual_width, self.visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
-        self.caption_embeddings = nn.Embedding(768, 768) # add idea66-6
+        # self.caption_embeddings = nn.Embedding(768, 768) # add idea66-6
         
-        # self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.visual_width, nhead=self.visual_head)
-        # self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.visual_layers)
+        # self.vis_linear = nn.Linear(2048, 512)
+
+        self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.visual_width, nhead=self.visual_head)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.visual_layers)
 
         self.temporal = Transformer(
             width=self.visual_width,
@@ -154,8 +158,6 @@ class CLIPVAD(nn.Module):
             heads=self.visual_head,
             attn_mask=self.build_attention_mask(self.attn_window)
         )
-        self.cls_embeddings_caption = nn.Parameter(torch.randn(1, 1, 768)) # add cls token (batch*2, 1, 512)
-        self.cls_embeddings_visual = nn.Parameter(torch.randn(1, 1, self.visual_width)) # add cls token (batch*2, 1, 512)
 
         self.crossfusion = CrossAttentionFusion(fusion_dim=self.visual_width, num_heads=self.cross_attn_head)
 
@@ -170,22 +172,23 @@ class CLIPVAD(nn.Module):
             ("c_proj", nn.Linear(1024 * 4, 1024))
         ]))
 
-        self.cap_linear = nn.Linear(768, 512)
+        # self.cap_linear = nn.Linear(768, 512)
 
         self.encoder_conv = nn.Sequential(
-            nn.Conv1d(512, 256, kernel_size=3, padding=1),
-            nn.GELU(),
-            nn.Dropout()
+            nn.Conv1d(512, 512, kernel_size=3, padding=1),
+            nn.LeakyReLU(),
+        )
+        self.encoder_linear = nn.Sequential(
+            nn.Linear(512, 256),
+            nn.LeakyReLU(),
         )
         self.decoder_linear = nn.Sequential(
-            nn.Linear(256, 256),
-            nn.GELU(),
-            nn.Dropout()
+            nn.Linear(256, 512),
+            nn.LeakyReLU(),
         )
         self.decoder_conv = nn.Sequential(
-            nn.Conv1d(256, 512, kernel_size=3, padding=1),
-            nn.GELU(),
-            nn.Dropout()
+            nn.Conv1d(512, 512, kernel_size=3, padding=1),
+            nn.LeakyReLU(),
         )
 
         self.initialize_parameters()
@@ -193,7 +196,7 @@ class CLIPVAD(nn.Module):
     def initialize_parameters(self):
         nn.init.normal_(self.text_prompt_embeddings.weight, std=0.01)
         nn.init.normal_(self.frame_position_embeddings.weight, std=0.01)
-        nn.init.normal_(self.caption_embeddings.weight, std=0.01)
+        # nn.init.normal_(self.caption_embeddings.weight, std=0.01)
 
     def build_attention_mask(self, attn_window):
         # lazily create causal attention mask, with full attention between the vision tokens
@@ -214,14 +217,16 @@ class CLIPVAD(nn.Module):
         position_ids = position_ids.unsqueeze(0).expand(images.shape[0], -1)    # (batch size,256+1)
         frame_position_embeddings = self.frame_position_embeddings(position_ids)    # (batch size, 256+1, 512)
 
-        images = images.permute(1, 0, 2) + frame_position_embeddings.permute(1, 0, 2) # (256, batch, 512)
+        images = images + frame_position_embeddings # (256, batch, 512)
 
-        lstm_output, (_, _) = self.lstm(images)
+        # images = self.vis_linear(images)
+
+        lstm_output, (_, _) = self.lstm(images.permute(1,0,2))
         lstm_output = self.lstmnorms(lstm_output.permute(1, 0, 2))
 
         encoder_out, _ = self.temporal((lstm_output.permute(1, 0, 2), None)) # (256, batch, 512)
         output = self.tempnorms(encoder_out.permute(1, 0, 2))   
-         
+
         return output
 
     def encode_textprompt(self, text):
@@ -269,9 +274,13 @@ class CLIPVAD(nn.Module):
         return vis_fusion_feat
 
     def approxi_text(self, visual):
-        encode_vis = self.encoder_conv(visual.transpose(1,2))
-        lin_vis = self.decoder_linear(encode_vis.transpose(1,2))
-        decode_vis = self.decoder_conv(lin_vis.transpose(1,2))
+        encode_vis = self.encoder_conv(visual.transpose(1,2)) #input b, d, s
+        lin_vis1 = self.encoder_linear(encode_vis.transpose(1,2)) #input b, s, d
+
+        lin_vis2 = self.decoder_linear(lin_vis1) #input b, s, d
+        decode_vis = self.decoder_conv(lin_vis2.transpose(1,2)) #input b, d, s
+
+        # encoder_out = self.transformer_encoder(decode_vis.permute(2, 0, 1)) + visual.permute(1,0,2) #input s, b, d
 
         return decode_vis.transpose(1,2)
     
@@ -279,9 +288,9 @@ class CLIPVAD(nn.Module):
 
         # caption_features = self.encode_caption(captioning) # batch, 256+1, 512
         visual_features = self.encode_video_lstm(visual)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])
-        approxi_features = self.approxi_text(visual_features)
+        encoder_out = self.approxi_text(visual_features)
 
-        fusion_feat = self.crossfusion(approxi_features, visual_features) # fusion feat(batch, 512)
+        fusion_feat = self.crossfusion(encoder_out, visual_features) # fusion feat(batch, 512)
         vis_fusion_feat = self.cls_attention(fusion_feat, visual_features)
 
         logits1 = self.classifier(vis_fusion_feat + self.mlp1(vis_fusion_feat)) # A = Sigmoid(FC(FFN(X) + X)), (batch, 256, 1)
@@ -290,7 +299,7 @@ class CLIPVAD(nn.Module):
 
         text_features = text_features_ori
         logits_attn = logits1.permute(0, 2, 1)  # (batch, 1, 256)
-        visual_attn = logits_attn @ vis_fusion_feat # aggregate(visual features, logits1), (batch, 1, 512)
+        visual_attn = logits_attn @ encoder_out # aggregate(visual features, logits1), (batch, 1, 512)
         visual_attn = visual_attn / visual_attn.norm(dim=-1, keepdim=True)  # aggregate(visual features, logits1)
         visual_attn = visual_attn.expand(visual_attn.shape[0], text_features_ori.shape[0], visual_attn.shape[2])    # (batch, 7, 512)
         
@@ -305,5 +314,5 @@ class CLIPVAD(nn.Module):
         
         logits2 = visual_features_norm @ text_features_norm.type(visual_features_norm.dtype) / 0.07 #(batch, 256, 7)
 
-        return text_features_ori, logits1, logits2, approxi_features
+        return text_features_ori, logits1, logits2, encoder_out
     
