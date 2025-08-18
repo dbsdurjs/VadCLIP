@@ -26,14 +26,10 @@ parser.add_argument('--checkpoint-path', default='../vadclip_pth/model/checkpoin
 parser.add_argument('--batch-size', default=96, type=int)
 
 parser.add_argument('--using-caption', action='store_true', default=True)
-parser.add_argument('--saved-video', action='store_true', default=False)
-parser.add_argument('--save-test-result', action='store_true', default=False)
+parser.add_argument('--saved-video', action='store_true', default=True)
+parser.add_argument('--save-test-result', action='store_true', default=True)
 
-parser.add_argument('--train-list', default='list/xd_CLIP_rgb.csv')
-parser.add_argument('--test-list', default='list/xd_CLIP_rgbtest.csv')
-
-parser.add_argument('--train-cap-list', default='list/xd_CLIP_rgb_description.csv')
-parser.add_argument('--test-cap-list', default='list/xd_CLIP_rgbtest_description.csv')
+parser.add_argument('--test-list', default='list/hackerton.csv')
 
 parser.add_argument('--gt-path', default='list/gt.npy')
 parser.add_argument('--gt-segment-path', default='list/gt_segment.npy')
