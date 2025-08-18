@@ -174,18 +174,18 @@ class CLIPVAD(nn.Module):
 
         self.encoder_conv = nn.Sequential(
             nn.Conv1d(512, 256, kernel_size=3, padding=1),
-            nn.GELU(),
-            nn.Dropout()
+            QuickGELU(),
+            nn.Dropout(0.3)
         )
         self.decoder_linear = nn.Sequential(
             nn.Linear(256, 256),
-            nn.GELU(),
-            nn.Dropout()
+            QuickGELU(),
+            # nn.Dropout()
         )
         self.decoder_conv = nn.Sequential(
             nn.Conv1d(256, 512, kernel_size=3, padding=1),
-            nn.GELU(),
-            nn.Dropout()
+            QuickGELU(),
+            nn.Dropout(0.3)
         )
 
         self.initialize_parameters()
