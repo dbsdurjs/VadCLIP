@@ -29,12 +29,12 @@ parser.add_argument('--using-caption', action='store_true', default=True)
 parser.add_argument('--saved-video', action='store_true', default=True)
 parser.add_argument('--save-test-result', action='store_true', default=True)
 
-parser.add_argument('--test-list', default='list/hackerton.csv')
+parser.add_argument('--test-list', default='list/hackerton_xd_temp.csv')
 
 parser.add_argument('--gt-path', default='list/gt.npy')
 parser.add_argument('--gt-segment-path', default='list/gt_segment.npy')
 parser.add_argument('--gt-label-path', default='list/gt_label.npy')
-parser.add_argument('--gt-txt', default='./list/gt_hackerton.txt')
+parser.add_argument('--gt-txt', default='./list/gt_hackerton_xd_temp.txt')
 parser.add_argument('--frame_base_folder', default='../hackerton2-1/extracted_frames')
 
 parser.add_argument('--lr', default=1e-5)

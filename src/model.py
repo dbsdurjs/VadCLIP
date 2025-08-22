@@ -275,7 +275,7 @@ class CLIPVAD(nn.Module):
 
         return decode_vis.transpose(1,2)
     
-    def forward(self, visual, captioning, padding_mask, text): 
+    def forward(self, visual, padding_mask, text): 
 
         # caption_features = self.encode_caption(captioning) # batch, 256+1, 512
         visual_features = self.encode_video_lstm(visual)  # LGT Adapter(clip img features), torch.Size([batch, 256+1, 512])

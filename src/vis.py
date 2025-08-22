@@ -34,7 +34,7 @@ def visualize_video(
     imagefile_template,
     font_size=18,
 ):
-    fig = plt.figure(figsize=(12, 8))
+    fig = plt.figure(figsize=(24, 16))
     gs = gridspec.GridSpec(2, 2, width_ratios=[1, 1], height_ratios=[1, 1])
 
     ax1 = plt.subplot(gs[0, 0])
@@ -55,6 +55,7 @@ def visualize_video(
     if annotation_intervals is not None:
         for (start, end) in annotation_intervals:
             # 사각형을 그릴 구간: 시작 인덱스 start, 길이 (end-start)
+            print(f'draw rectangle({start}, {end})')
             rect = plt.Rectangle((start, ymin), end - start, ymax - ymin, color="#e15759", alpha=0.5)
             ax3.add_patch(rect)
 

@@ -20,21 +20,21 @@ parser.add_argument('--lstm-layer', default=1, type=int) # 1일때 87.23%
 parser.add_argument('--cross-attn-head', default=1, type=int) # 1 - 87.23%, 5.67% | 2 - 87.11%, 6.27%
 
 parser.add_argument('--max-epoch', default=10, type=int)
-parser.add_argument('--model-path', default='../vadclip_pth/model/model_ucf_caption.pth')
+parser.add_argument('--model-path', default='../vadclip_pth/model/model_ucf_caption(hackerton).pth')
 parser.add_argument('--use-checkpoint', default=False, type=bool)
-parser.add_argument('--checkpoint-path', default='../vadclip_pth/model/checkpoint_ucf_caption.pth')
+parser.add_argument('--checkpoint-path', default='../vadclip_pth/model/checkpoint_ucf_caption(hackerton).pth')
 parser.add_argument('--batch-size', default=64, type=int)
 
 parser.add_argument('--using-caption', action='store_true', default=True)
-parser.add_argument('--saved-video', action='store_true', default=False)
+parser.add_argument('--saved-video', action='store_true', default=True)
 parser.add_argument('--save-test-result', action='store_true', default=True)
 
-parser.add_argument('--test-list', default='list/hackerton.csv')
+parser.add_argument('--test-list', default='list/hackerton_ucf.csv')
 
 parser.add_argument('--gt-path', default='list/gt_ucf.npy')
 parser.add_argument('--gt-segment-path', default='list/gt_segment_ucf.npy')
 parser.add_argument('--gt-label-path', default='list/gt_label_ucf.npy')
-parser.add_argument('--gt-txt', default='./list/gt_hackerton.txt')
+parser.add_argument('--gt-txt', default='./list/gt_hackerton_ucf.txt')
 parser.add_argument('--frame_base_folder', default='../hackerton2-1/extracted_frames')
 
 parser.add_argument('--lr', default=2e-5)

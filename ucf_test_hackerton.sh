@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python src/ucf_test_hackerton.py --model-path '../vadclip_pth/model/model_ucf_caption(hackerton).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_ucf_caption(hackerton).pth' --using-caption --save-test-result

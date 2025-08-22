@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=1 python src/xd_test_hackerton.py --model-path '../vadclip_pth/model/model_xd_caption(hackerton).pth' --checkpoint-path '../vadclip_pth/model/checkpoint_xd_caption(hackerton).pth' --using-caption --save-test-result

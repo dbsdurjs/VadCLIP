@@ -22,26 +22,24 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     video_names_list = []
     video_paths_list = []  # 프레임 이미지가 저장된 폴더 경로
     video_fps_list = []    # 동영상 fps (예: 30)
+    
+    anomaly_scores_stack = []  # 시각화
 
     with torch.no_grad():
         for i, item in enumerate(testdataloader):
             visual = item[0].squeeze(0)
             video_label = item[1] # add
             length = item[2] # padding 256 사이즈에서 실제 프레임 수만큼 줄이기
-            cap_features = item[3].squeeze(0)
-            cap_feat_lengths = item[4]
-            video_basename = item[5] # add
-            video_path = item[6]  # 프레임 이미지들이 저장된 폴더 경로
-            video_fps = item[7]   # 동영상 fps
+            video_basename = item[3] # add
+            video_path = item[4]  # 프레임 이미지들이 저장된 폴더 경로
+            video_fps = item[5]   # 동영상 fps
 
             length = int(length)
             len_cur = length
             if len_cur < maxlen:
                 visual = visual.unsqueeze(0)
-                cap_features = cap_features.unsqueeze(0)
 
             visual = visual.to(device)
-            cap_features = cap_features.to(device)
 
             lengths = torch.zeros(int(length / maxlen) + 1)
             for j in range(int(length / maxlen) + 1):
@@ -57,11 +55,14 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     lengths[j] = length
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2, _ = model(visual, cap_features, padding_mask, prompt_text)
+            _, logits1, logits2, _ = model(visual, padding_mask, prompt_text)
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2])
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2])
             prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1))
             prob1 = torch.sigmoid(logits1[0:len_cur].squeeze(-1))
+
+            prob1_np = prob1.detach().cpu().numpy().reshape(-1)  # 시각화
+            anomaly_scores_stack.append(prob1_np) # 시각화
 
             video_labels_list.append(video_label)
             video_names_list.append(video_basename)
@@ -84,29 +85,29 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
     ap1 = ap1.tolist()
     ap2 = ap2.tolist()
 
-    ROC1 = roc_auc_score(gt, np.repeat(ap1, 16))
-    AP1 = average_precision_score(gt, np.repeat(ap1, 16))
-    ROC2 = roc_auc_score(gt, np.repeat(ap2, 16))
-    AP2 = average_precision_score(gt, np.repeat(ap2, 16))
+    # ROC1 = roc_auc_score(gt, np.repeat(ap1, 16))
+    # AP1 = average_precision_score(gt, np.repeat(ap1, 16))
+    # ROC2 = roc_auc_score(gt, np.repeat(ap2, 16))
+    # AP2 = average_precision_score(gt, np.repeat(ap2, 16))
 
     if args.saved_video:
-        saved_test_video(args.gt_txt, video_names_list, element_logits2_stack, args.frame_base_folder, video_fps_list, prompt_text)
+        saved_test_video_logits1(args.gt_txt, video_names_list, anomaly_scores_stack, args.frame_base_folder, video_fps_list, prompt_text, 'xd')
 
-    print(f"AUC1: {ROC1:.4f}, AP1: {AP1:.4f}")
-    print(f"AUC2: {ROC2:.4f}, AP2: {AP2:.4f}")
+    # print(f"AUC1: {ROC1:.4f}, AP1: {AP1:.4f}")
+    # print(f"AUC2: {ROC2:.4f}, AP2: {AP2:.4f}")
 
-    dmap, iou = dmAP(element_logits2_stack, gtsegments, gtlabels, excludeNormal=False)
-    averageMAP = 0
-    for i in range(5):
-        print('mAP@{0:.1f} ={1:.2f}%'.format(iou[i], dmap[i]))
-        averageMAP += dmap[i]
-    averageMAP = averageMAP/(i+1)
-    print('average MAP: {:.2f}'.format(averageMAP))
+    # dmap, iou = dmAP(element_logits2_stack, gtsegments, gtlabels, excludeNormal=False)
+    # averageMAP = 0
+    # for i in range(5):
+    #     print('mAP@{0:.1f} ={1:.2f}%'.format(iou[i], dmap[i]))
+    #     averageMAP += dmap[i]
+    # averageMAP = averageMAP/(i+1)
+    # print('average MAP: {:.2f}'.format(averageMAP))
 
-    if args.save_test_result:
-        save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, args, filename="../output/result_xd.txt")
+    # if args.save_test_result:
+    #     save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, args, filename="../output/result_xd.txt")
 
-    return ROC1, AP1, ROC2, AP2, averageMAP
+    # return ROC1, AP1, ROC2, AP2, averageMAP
 
 
 if __name__ == '__main__':
@@ -115,7 +116,7 @@ if __name__ == '__main__':
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
 
-    test_dataset = XDDataset(args.visual_length, args.test_list, True, label_map, using_caption=args.using_caption)
+    test_dataset = XDDataset(args.visual_length, args.test_list, True, label_map)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     prompt_text = get_prompt_text(label_map)
