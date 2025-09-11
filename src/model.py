@@ -59,12 +59,12 @@ class CrossAttentionFusion(nn.Module):
     def __init__(self, fusion_dim=512, num_heads=8, dropout=0.0, cross_attn_depth=1):
         super(CrossAttentionFusion, self).__init__()
         # 캡션 → 시각 Cross Attention
-        # self.cross_attn_cap = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads, dropout=dropout)
+        self.cross_attn_cap = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads, dropout=dropout)
         # 시각 → 캡션 Cross Attention
         self.cross_attn_vis = nn.MultiheadAttention(embed_dim=fusion_dim, num_heads=num_heads, dropout=dropout)
         
         # LayerNorm
-        # self.norm_cap = nn.LayerNorm(fusion_dim)
+        self.norm_cap = nn.LayerNorm(fusion_dim)
         self.norm_vis = nn.LayerNorm(fusion_dim)
 
         self.cross_attn_layers = nn.ModuleList([])
@@ -90,18 +90,16 @@ class CrossAttentionFusion(nn.Module):
         for v_to_c, norm_v in self.cross_attn_layers:
 
             # 캡션 → 시각 Cross Attention
-            # attn_out_cap, _ = c_to_v(cap_query.permute(1, 0, 2), cap_qkv.permute(1, 0, 2), cap_qkv.permute(1, 0, 2))
-            # cap_out = attn_out_cap.permute(1, 0, 2) + cap_query
+            # attn_out_cap, _ = c_to_v(caption_feat.permute(1, 0, 2), visual_feat.permute(1, 0, 2), visual_feat.permute(1, 0, 2))
+            # cap_out = norm_c(attn_out_cap.permute(1, 0, 2)) + caption_feat
 
             # 시각 → 캡션 Cross Attention
             attn_out_vis, _ = v_to_c(visual_feat.permute(1, 0, 2), caption_feat.permute(1, 0, 2), caption_feat.permute(1, 0, 2))
             vis_out = norm_v(attn_out_vis.permute(1, 0, 2)) + visual_feat
 
         visual_features = self.mlp_head_vis(vis_out) # batch, 512
-
-        fusion_features = visual_features # batch, 512
-
-        return fusion_features
+        
+        return visual_features
     
 class CLIPVAD(nn.Module):
     def __init__(self, args, device):
@@ -143,7 +141,7 @@ class CLIPVAD(nn.Module):
 
         self.frame_position_embeddings = nn.Embedding(self.visual_width, self.visual_width)
         self.text_prompt_embeddings = nn.Embedding(77, self.embed_dim)
-        self.caption_embeddings = nn.Embedding(768, 768) # add idea66-6
+        # self.caption_embeddings = nn.Embedding(768, 768) # add idea66-6
         
         # self.encoder_layer = nn.TransformerEncoderLayer(d_model=self.visual_width, nhead=self.visual_head)
         # self.transformer_encoder = nn.TransformerEncoder(encoder_layer=self.encoder_layer, num_layers=self.visual_layers)
@@ -154,8 +152,8 @@ class CLIPVAD(nn.Module):
             heads=self.visual_head,
             attn_mask=self.build_attention_mask(self.attn_window)
         )
-        self.cls_embeddings_caption = nn.Parameter(torch.randn(1, 1, 768)) # add cls token (batch*2, 1, 512)
-        self.cls_embeddings_visual = nn.Parameter(torch.randn(1, 1, self.visual_width)) # add cls token (batch*2, 1, 512)
+        # self.cls_embeddings_caption = nn.Parameter(torch.randn(1, 1, 768)) # add cls token (batch*2, 1, 512)
+        # self.cls_embeddings_visual = nn.Parameter(torch.randn(1, 1, self.visual_width)) # add cls token (batch*2, 1, 512)
 
         self.crossfusion = CrossAttentionFusion(fusion_dim=self.visual_width, num_heads=self.cross_attn_head)
 
@@ -170,22 +168,22 @@ class CLIPVAD(nn.Module):
             ("c_proj", nn.Linear(1024 * 4, 1024))
         ]))
 
-        self.cap_linear = nn.Linear(768, 512)
+        # self.cap_linear = nn.Linear(768, 512)
 
         self.encoder_conv = nn.Sequential(
             nn.Conv1d(512, 256, kernel_size=3, padding=1),
-            QuickGELU(),
-            nn.Dropout(0.3)
+            nn.GELU(),
+            nn.Dropout()
         )
         self.decoder_linear = nn.Sequential(
             nn.Linear(256, 256),
-            QuickGELU(),
-            # nn.Dropout()
+            nn.GELU(),
+            nn.Dropout()
         )
         self.decoder_conv = nn.Sequential(
             nn.Conv1d(256, 512, kernel_size=3, padding=1),
-            QuickGELU(),
-            nn.Dropout(0.3)
+            nn.GELU(),
+            nn.Dropout()
         )
 
         self.initialize_parameters()
@@ -193,7 +191,7 @@ class CLIPVAD(nn.Module):
     def initialize_parameters(self):
         nn.init.normal_(self.text_prompt_embeddings.weight, std=0.01)
         nn.init.normal_(self.frame_position_embeddings.weight, std=0.01)
-        nn.init.normal_(self.caption_embeddings.weight, std=0.01)
+        # nn.init.normal_(self.caption_embeddings.weight, std=0.01)
 
     def build_attention_mask(self, attn_window):
         # lazily create causal attention mask, with full attention between the vision tokens
@@ -244,17 +242,17 @@ class CLIPVAD(nn.Module):
 
         return text_features
 
-    def encode_caption(self, caption):
-        caption = caption.to(torch.float) # (batch size, 256, 512)
-        position_ids = torch.arange(self.visual_length, device=self.device)
-        position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size, 256+1)
-        frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 512)
+    # def encode_caption(self, caption):
+    #     caption = caption.to(torch.float) # (batch size, 256, 512)
+    #     position_ids = torch.arange(self.visual_length, device=self.device)
+    #     position_ids = position_ids.unsqueeze(0).expand(caption.shape[0], -1)    # (batch size, 256+1)
+    #     frame_position_embeddings = self.caption_embeddings(position_ids)    # (batch size, 256+1, 512)
         
-        caption_feat = caption + frame_position_embeddings
+    #     caption_feat = caption + frame_position_embeddings
 
-        x = self.cap_linear(caption_feat)
+    #     x = self.cap_linear(caption_feat)
         
-        return x
+    #     return x
     
     def cls_attention(self, fusion_feat, visual_feat):
 

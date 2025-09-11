@@ -41,10 +41,13 @@ class UCFDataset(data.Dataset):
         alpha = 0.3
         
         if self.using_caption:
-            base_video_name = base_file.split('__')[0]
+            base_video_name = base_file.rsplit('.npy')[0]
 
+            # matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
+            #                         self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro.npy")]
             matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
-                                    self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro.npy")]
+                        self.df_cap['path'].str.endswith(base_video_name + "_refine_2.npy")]
+
             if matching_rows.empty:
                 raise KeyError(f"No matching clip_cap_feature for video {base_video_name}")
             
@@ -56,10 +59,12 @@ class UCFDataset(data.Dataset):
             clip_cap_feature, clip_cap_length = tools.process_feat(clip_cap_feature, self.clip_dim)
         else:
             clip_feature, clip_length = tools.process_split(clip_feature, self.clip_dim)
-            clip_cap_feature, clip_cap_length = tools.process_split(clip_cap_feature, self.clip_dim)
+            clip_cap_feature = 0
+            clip_cap_length = 0
 
         clip_feature = torch.tensor(clip_feature).float()
-        clip_cap_feature = torch.tensor(clip_cap_feature).float()
+        if self.test_mode == False:
+            clip_cap_feature = torch.tensor(clip_cap_feature).float()
         clip_label = self.df.loc[index]['label']
 
         return clip_feature, clip_label, clip_length, clip_cap_feature, clip_cap_length, base_file, video_path, video_fps
@@ -104,11 +109,14 @@ class XDDataset(data.Dataset):
         video_fps = 30
         alpha = 0.3
         
-        if self.using_caption:
-            base_video_name = base_file.rsplit('__', 1)[0]
+        if self.using_caption and not(self.test_mode):
+            base_video_name = base_file.rsplit('.npy')[0]
 
+            # matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
+            #                         self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro.npy")]
             matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
-                                    self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro.npy")]
+               self.df_cap['path'].str.endswith(base_video_name + "_refine_2.npy")]
+
             if matching_rows.empty:
                 raise KeyError(f"No matching clip_cap_feature for video {base_file}")
             
@@ -121,7 +129,8 @@ class XDDataset(data.Dataset):
 
         else:
             clip_feature, clip_length = tools.process_split(clip_feature, self.clip_dim)
-            clip_cap_feature, clip_cap_length = tools.process_split(clip_cap_feature, self.clip_dim)
+            clip_cap_feature = 0
+            clip_cap_length = 0
         
         clip_feature = torch.tensor(clip_feature).float()
         clip_cap_feature = torch.tensor(clip_cap_feature).float()

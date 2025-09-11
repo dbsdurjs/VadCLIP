@@ -49,27 +49,84 @@ def CLAS2(logits, labels, lengths, device): # coarse grained
     clsloss = F.binary_cross_entropy(instance_logits, labels) # instance_logits (128), labels (128)
     return clsloss
 
-def refine_caption_vectorized(visual_feat, caption_feat):
+def refine_caps_topk_with_visual(
+    visual_feat: torch.Tensor,      # (B, T, D)
+    cap_feat: torch.Tensor,         # (B, T, D)
+    lengths: torch.Tensor,          # (B,) 각 시퀀스 실제 길이
+    k: int = 3,
+    tau: float = 0.07,              # softmax 온도
+    window: int | None = None,      # 예: 8이면 i번째 프레임은 [i-8, i+8]에서만 후보 검색
+    mode: str = "softmax"           # "softmax" | "uniform" | "hardmax" (hardmax=argmax)
+) -> torch.Tensor:
     """
-    visual_feat: (B, T, D)
-    caption_feat: (B, T, D)
-    return: refined_caption: (B, T, D)
+    visual_feat과 cap_feat의 코사인 유사도를 이용해 각 타임스텝별로
+    유사도가 높은 top-k 캡션 벡터를 가중 평균하여 (B, T, D) 정제 타겟을 만든다.
+    패딩구간/로컬윈도/유효길이를 모두 반영.
     """
     B, T, D = visual_feat.shape
-    vis_norm = F.normalize(visual_feat, dim=-1)      # (B, 256, 512)
-    cap_norm = F.normalize(caption_feat, dim=-1)     
-    
-    sim_matrix = torch.bmm(vis_norm, cap_norm.transpose(1, 2))  # (B, 256, 256), cosine similarity 계산
+    device = visual_feat.device
+    dtype = visual_feat.dtype
 
-    idx = sim_matrix.argmax(dim=-1)  # (B, 256), 각 프레임마다 유사성이 높은 캡션 선택
+    # 정규화 후 코사인 유사도 행렬 (B, T, T)
+    v = F.normalize(visual_feat, dim=-1)
+    c = F.normalize(cap_feat, dim=-1)
+    sim = torch.bmm(v, c.transpose(1, 2))  # (B, T, T)
 
-    refined = torch.gather(caption_feat, 1, idx.unsqueeze(-1).expand(-1, -1, D))  # (B, 256, 512)
-    
+    # 유효 길이 마스크 (행/열 모두 길이 미만만 true)
+    t_idx = torch.arange(T, device=device).unsqueeze(0)  # (1, T)
+    row_valid = (t_idx < lengths.unsqueeze(1))          # (B, T)
+    col_valid = row_valid                                # 동일 길이 가정: 시각/캡션 길이 동일
+    valid = row_valid.unsqueeze(2) & col_valid.unsqueeze(1)  # (B, T, T)
+
+    # 로컬 윈도우 제한(옵션)
+    if window is not None:
+        pos = torch.arange(T, device=device)
+        dist = (pos[None, :, None] - pos[None, None, :]).abs()  # (1, T, T)
+        local = dist <= window
+        valid = valid & local  # 둘 다 만족하는 위치만 true
+
+    # 유효하지 않은 곳은 매우 작은 값으로 마스킹
+    sim_masked = sim.masked_fill(~valid, -1e9)
+
+    # hardmax(=argmax) 모드: top-1만 사용
+    if mode == "hardmax":
+        idx = sim_masked.argmax(dim=-1, keepdim=True)  # (B, T, 1)
+        weights = torch.ones(B, T, 1, device=device, dtype=dtype)
+    else:
+        # Top-K 인덱스/값
+        K = min(k, T)
+        vals, idx = torch.topk(sim_masked, k=K, dim=-1)  # (B, T, K)
+
+        # 선택된 인덱스가 유효 길이 내인지 체크(길이가 K보다 작은 샘플 대비)
+        valid_sel = (idx < lengths.view(B, 1, 1)).to(dtype)  # (B, T, K)
+
+        if mode == "softmax":
+            weights = F.softmax(vals / tau, dim=-1) * valid_sel
+            weights = weights / (weights.sum(dim=-1, keepdim=True).clamp_min(1e-8))
+        elif mode == "uniform":
+            # 유효한 개수로 나눔
+            denom = valid_sel.sum(dim=-1, keepdim=True).clamp_min(1.0)
+            weights = valid_sel / denom
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
+
+    # (B, T, T) 희소 가중 행렬 W 만들고 행합=1이 되도록(패딩 행은 0)
+    W = torch.zeros(B, T, T, device=device, dtype=dtype)
+    W.scatter_(2, idx, weights)  # 선택 위치에 가중치 채우기
+    W = W * row_valid.to(dtype).unsqueeze(-1)  # 패딩 행은 0
+
+    # 정제 타겟 = W @ cap_feat  → (B, T, D)
+    refined = torch.bmm(W, cap_feat)
     return refined
 
-def pmg_loss_txt_only(pred_txt, gt_txt):
-
-    # 차원별 제곱 오차
+def pmg_loss_txt_only(pred_txt, gt_txt, vis_feature, lengths):
+    # refined_target = refine_caps_topk_with_visual(
+    #     visual_feat=vis_feature,
+    #     cap_feat=gt_txt,
+    #     lengths=lengths,
+    #     window=16
+    # )  # (B, T, D)
+    # # 차원별 제곱 오차
     mse = F.mse_loss(pred_txt, gt_txt, reduction='none')  # (B, seq, dim)
 
     # dim 차원 평균 → 각 (B, seq)에 대해 평균
@@ -123,10 +180,6 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # 128,256,1024
                 cap_features = torch.cat([normal_cap_features, anomaly_cap_features], dim=0).to(device) # add idea6-3
 
-                # if e == 0 and i ==0 :
-                #     print('caption refine!!!!!!!!!!')
-                #     cap_features = refine_caption_vectorized(visual_features, cap_features)
-
                 text_labels = list(normal_label) + list(anomaly_label)
                 feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (128, 14)
@@ -150,7 +203,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 loss3 = loss3 / 13 * 1e-1
                 loss_total3 += loss3.item()  
 
-                loss4 = pmg_loss_txt_only(approxi_features, cap_features)
+                loss4 = pmg_loss_txt_only(approxi_features, cap_features, visual_features, feat_lengths)
                 loss_total4 += loss4.item()
               
                 loss = loss1 + loss2 + loss3 + loss4
@@ -234,7 +287,7 @@ if __name__ == '__main__':
     anomaly_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, False, args.using_caption)
     anomaly_loader = DataLoader(anomaly_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
 
-    test_dataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
+    test_dataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=False)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args, device)

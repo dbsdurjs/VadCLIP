@@ -17,7 +17,7 @@ parser.add_argument('--text-layers', default=1, type=int) # xd에서는 1일때�
 parser.add_argument('--text-dim', default=512, type=int)
 parser.add_argument('--text-head', default=1, type=int) # 1일때가 가장 좋음(1,2,4,8 중 별 차이 없긴함), head는 text dim으로 나누어떨어져야 함
 parser.add_argument('--lstm-layer', default=5, type=int) # 5일때 가장 좋음(81%, 25%)
-parser.add_argument('--cross-attn-head', default=8, type=int) 
+parser.add_argument('--cross-attn-head', default=1, type=int) 
 
 parser.add_argument('--max-epoch', default=10, type=int)
 parser.add_argument('--model-path', default='../vadclip_pth/model/model_xd_caption.pth')
@@ -32,7 +32,7 @@ parser.add_argument('--save-test-result', action='store_true', default=False)
 parser.add_argument('--train-list', default='list/xd_CLIP_rgb.csv')
 parser.add_argument('--test-list', default='list/xd_CLIP_rgbtest.csv')
 
-parser.add_argument('--train-cap-list', default='list/xd_CLIP_rgb_description.csv')
+parser.add_argument('--train-cap-list', default='list/xd_CLIP_rgb_description_refine_2.csv')
 parser.add_argument('--test-cap-list', default='list/xd_CLIP_rgbtest_description.csv')
 
 parser.add_argument('--gt-path', default='list/gt.npy')

@@ -115,7 +115,7 @@ if __name__ == '__main__':
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
 
-    test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
+    test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=False)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     prompt_text = get_prompt_text(label_map)
@@ -125,8 +125,6 @@ if __name__ == '__main__':
 
     model = CLIPVAD(args, device)
     model_param = torch.load(args.model_path)
-    # model_param = torch.load(args.checkpoint_path) # add
-    # model_param = model_param['model_state_dict'] # add
     model.load_state_dict(model_param)
 
     test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)

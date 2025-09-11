@@ -63,7 +63,8 @@ def getLocMAP(predictions, th, gtsegments, gtlabels, excludeNormal):
       for i in range(len(predictions)):
          tmp = smooth(predictions[i][:, c])
          segment_predict_multithr = []
-         thr_set = np.arange(0.6, 0.7, 0.1)
+         # thr_set = np.arange(0.6, 0.7, 0.1)
+         thr_set = np.arange(0.8, 0.9, 0.1)
          for thr in thr_set:
             threshold = np.max(tmp) - (np.max(tmp) - np.min(tmp))*thr  ###  0.8 is the best?
             vid_pred = np.concatenate([np.zeros(1), (tmp>threshold).astype('float32'), np.zeros(1)], axis=0)
