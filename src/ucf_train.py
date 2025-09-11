@@ -234,7 +234,7 @@ if __name__ == '__main__':
     anomaly_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, False, args.using_caption)
     anomaly_loader = DataLoader(anomaly_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
 
-    test_dataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
+    test_dataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=False)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args, device)
