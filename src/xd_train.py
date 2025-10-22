@@ -66,6 +66,18 @@ def refine_caption_vectorized(visual_feat, caption_feat):
     
     return refined
 
+def pmg_loss_txt_only(pred_txt, gt_txt):
+
+    # 차원별 제곱 오차
+    mse = F.mse_loss(pred_txt, gt_txt, reduction='none')  # (B, seq, dim)
+
+    # dim 차원 평균 → 각 (B, seq)에 대해 평균
+    mse_per_position = torch.sum(mse, dim=-1) / pred_txt.shape[-1]  # (B, seq)
+
+    # 전체 평균
+    loss = torch.mean(mse_per_position)  # scalar
+    return loss
+
 def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
     model.to(device)
 
@@ -97,6 +109,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
         loss_total1 = 0
         loss_total2 = 0
         loss_total3 = 0
+        loss_total4 = 0
         total_loss = 0
 
         normal_iter = iter(normal_loader)
@@ -111,15 +124,15 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 visual_features = torch.cat([normal_features, anomaly_features], dim=0).to(device) # batch,256,512
                 cap_features = torch.cat([normal_cap_features, anomaly_cap_features], dim=0).to(device) # add idea6-3
 
-                if e == 0 and i == 0:
-                    print('caption refine!!!!!!!!!!')
-                    cap_features = refine_caption_vectorized(visual_features, cap_features)
+                # if e == 0 and i == 0:
+                #     print('caption refine!!!!!!!!!!')
+                #     cap_features = refine_caption_vectorized(visual_features, cap_features)
 
                 text_labels = list(normal_label) + list(anomaly_label)
                 feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (batch, 7)
 
-                text_features, logits1, logits2 = model(visual_features, cap_features, None, prompt_text) # edit idea6-3
+                text_features, logits1, logits2, approxi_features = model(visual_features, cap_features, None, prompt_text) # edit idea6-3
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -135,7 +148,10 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 loss3 = loss3 / 6
                 loss_total3 += loss3.item()
 
-                loss = loss1 + loss2 + loss3 * 1e-4
+                loss4 = pmg_loss_txt_only(approxi_features, cap_features)
+                loss_total4 += loss4.item()
+
+                loss = loss1 + loss2 + loss3 * 1e-4 + loss4 *4
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -147,6 +163,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                     loss1=f"{(loss_total1 / (i+1)):.4f}",
                     loss2=f"{(loss_total2 / (i+1)):.4f}",
                     loss3=f"{(loss_total3 / (i+1)):.4f}",
+                    loss4=f"{(loss_total4 / (i+1)):.4f}",
                     loss_total=f"{(total_loss / (i+1)):.4f}"
                 )
                 pbar.update(1) # tqdm은 매 step마다 기록
@@ -157,14 +174,16 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                     step_loss1 = loss_total1 / (i+1)
                     step_loss2 = loss_total2 / (i+1)
                     step_loss3 = loss_total3 / (i+1)
+                    step_loss4 = loss_total4 / (i+1)
                     step_loss_total = total_loss / (i+1)
                     
                     writer.add_scalar('loss1/train', step_loss1, tensorboard_step)
                     writer.add_scalar('loss2/train', step_loss2, tensorboard_step)
                     writer.add_scalar('loss3/train', step_loss3, tensorboard_step)
+                    writer.add_scalar('loss4/train', step_loss4, tensorboard_step)
                     writer.add_scalar('loss_total/train', step_loss_total, tensorboard_step)
 
-                    print(f'epoch: {e+1}, loss1: {step_loss1:.4f}, loss2: {step_loss2:.4f}, loss3: {step_loss3:.4f}, loss_total: {step_loss_total:.4f}')
+                    print(f'epoch: {e+1}, loss1: {step_loss1:.4f}, loss2: {step_loss2:.4f}, loss3: {step_loss3:.4f}, loss4: {step_loss4:.4f}, loss_total: {step_loss_total:.4f}')
                     
                     AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
                     
@@ -211,7 +230,7 @@ if __name__ == '__main__':
     anomaly_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, False, using_caption=args.using_caption)
     anomaly_loader = DataLoader(anomaly_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
 
-    test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
+    test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=False)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args, device)

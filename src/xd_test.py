@@ -28,8 +28,6 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
             visual = item[0].squeeze(0)
             video_label = item[1] # add
             length = item[2] # padding 256 사이즈에서 실제 프레임 수만큼 줄이기
-            cap_features = item[3].squeeze(0)
-            cap_feat_lengths = item[4]
             video_basename = item[5] # add
             video_path = item[6]  # 프레임 이미지들이 저장된 폴더 경로
             video_fps = item[7]   # 동영상 fps
@@ -38,10 +36,8 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
             len_cur = length
             if len_cur < maxlen:
                 visual = visual.unsqueeze(0)
-                cap_features = cap_features.unsqueeze(0)
 
             visual = visual.to(device)
-            cap_features = cap_features.to(device)
 
             lengths = torch.zeros(int(length / maxlen) + 1)
             for j in range(int(length / maxlen) + 1):
@@ -55,9 +51,10 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     length -= maxlen
                 else:
                     lengths[j] = length
+                    
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2 = model(visual, cap_features, padding_mask, prompt_text)
+            _, logits1, logits2, _ = model(visual, None, padding_mask, prompt_text)
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2])
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2])
             prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1))
@@ -115,7 +112,7 @@ if __name__ == '__main__':
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
 
-    test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=args.using_caption)
+    test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=False)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     prompt_text = get_prompt_text(label_map)
