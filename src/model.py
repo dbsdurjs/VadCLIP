@@ -65,9 +65,7 @@ class CrossAttentionFusion(nn.Module):
         self.norm_vis = nn.LayerNorm(fusion_dim)
 
         self.mlp_head_vis = nn.Sequential(
-                nn.Linear(fusion_dim, fusion_dim * 4),
-                QuickGELU(),
-                nn.Linear(fusion_dim * 4, fusion_dim)
+                nn.Linear(fusion_dim, fusion_dim)
         )
         
     def forward(self, caption_feat, visual_feat):
