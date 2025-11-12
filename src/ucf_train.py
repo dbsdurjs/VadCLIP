@@ -79,7 +79,7 @@ def pmg_loss_txt_only(pred_txt, gt_txt):
     loss = torch.mean(mse_per_position)  # scalar
     return loss
     
-def train(model, normal_loader, anomaly_loader, testloader, args, label_map, device):
+def train(model, normal_loader, anomaly_loader, testloader, args, label_map, label_map_description, device):
     model.to(device)
     gt = np.load(args.gt_path)   # frame-level gt, 동영상 1 : [0,0,0,1,1,1,1,0,..], 동영상 2 : [0,0,0,0,0,0,1,1,..]
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)   # anomaly gt 구간
@@ -89,6 +89,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
     prompt_text = get_prompt_text(label_map)    # ['normal', 'abuse', 'arrest', 'arson', 'assault', 'burglary', 'explosion', 'fighting', 'roadAccidents', 'robbery', 'shooting', 'shoplifting', 'stealing', 'vandalism']
+    description_text = get_prompt_text(label_map_description)
     ap_best = 0
     epoch = 0
 
@@ -131,7 +132,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (128, 14)
 
-                text_features, logits1, logits2, approxi_features = model(visual_features, cap_features, None, prompt_text) # edit idea6-3
+                text_features, logits1, logits2, approxi_features = model(visual_features, cap_features, None, prompt_text, description_text) # edit idea6-3
                 
                 #loss1 - coarse grained
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device)
@@ -153,7 +154,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
                 loss4 = pmg_loss_txt_only(approxi_features, cap_features)
                 loss_total4 += loss4.item()
               
-                loss = loss1 + loss2 + loss3 + loss4 *4
+                loss = loss1 + loss2 + loss3 + loss4
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -186,7 +187,7 @@ def train(model, normal_loader, anomaly_loader, testloader, args, label_map, dev
 
                     print(f'epoch: {e+1}, loss1: {step_loss1:.4f}, loss2: {step_loss2:.4f}, loss3: {step_loss3:.4f}, loss4: {step_loss4:.4f}, loss_total: {step_loss_total:.4f}')
 
-                    AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
+                    AUC, AP, AUC2, AP2, average_mAP = test(model, testloader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, description_text, args)
                 
                     test_acc1 = {'AUC1':AUC, 'AP1':AP}
                     test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
@@ -224,6 +225,22 @@ if __name__ == '__main__':
     setup_seed(args.seed)
 
     label_map = dict({'Normal': 'normal', 'Abuse': 'abuse', 'Arrest': 'arrest', 'Arson': 'arson', 'Assault': 'assault', 'Burglary': 'burglary', 'Explosion': 'explosion', 'Fighting': 'fighting', 'RoadAccidents': 'roadAccidents', 'Robbery': 'robbery', 'Shooting': 'shooting', 'Shoplifting': 'shoplifting', 'Stealing': 'stealing', 'Vandalism': 'vandalism'})
+    label_map_description = dict({
+        'Normal': 'A state or behavior in everyday life without any special risk or problem.', 
+        'Abuse': 'The act of causing physical or mental harm to another person through words or actions, infringing on their rights.', 
+        'Arrest': 'A measure by law enforcement to detain a crime suspect and restrict their freedom.', 
+        'Arson': 'The criminal act of intentionally setting fire to property or life, causing significant damage.', 
+        'Assault': 'The act of inflicting physical violence or harm on another person.', 
+        'Burglary': 'The crime of secretly entering a residence or building to steal property.', 
+        'Explosion': 'A sudden release of energy from pressure or chemical reaction, producing a loud blast and shockwave.', 
+        'Fighting': 'A physical altercation where two or more individuals attack each other with fists, feet, or weapons.', 
+        'RoadAccidents': 'Accidents on roads involving collisions between vehicles, pedestrians, or bicycles.', 
+        'Robbery': 'The act of taking someone’s property by threat or use of force.', 
+        'Shooting': 'The act of firing projectiles from a firearm or other projectile weapon.', 
+        'Shoplifting': 'The act of concealing and stealing merchandise from a store.', 
+        'Stealing': 'The act of taking someone else’s property without their permission.', 
+        'Vandalism': 'The act of willfully damaging or defacing public facilities or another person’s property.'
+        })
 
     normal_dataset = UCFDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, True, args.using_caption)
     normal_loader = DataLoader(normal_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
@@ -234,5 +251,5 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args, device)
-    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
+    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, label_map_description, device)
     writer.close()

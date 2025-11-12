@@ -44,17 +44,30 @@ if __name__ == '__main__':
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = clip.load("ViT-B/16", device=device)
-
-    for folder_name in sorted(os.listdir(base_path)):
-        folder_path = os.path.join(base_path, folder_name)
-        if not os.path.isdir(folder_path):
-            continue
-
+    
+    fail_list = ['../VAD_dataset/UCF-Crimes/Extracted_Frames/Normal_Videos111_x264', '../VAD_dataset/UCF-Crimes/Extracted_Frames/Normal_Videos337_x264', '../VAD_dataset/UCF-Crimes/Extracted_Frames/Normal_Videos540_x264',
+                 '../VAD_dataset/UCF-Crimes/Extracted_Frames/Normal_Videos619_x264', '../VAD_dataset/UCF-Crimes/Extracted_Frames/Normal_Videos819_x264', '../VAD_dataset/UCF-Crimes/Extracted_Frames/Stealing019_x264'] 
+    # for folder_name in sorted(os.listdir(base_path)):
+        # folder_path = os.path.join(base_path, folder_name)
         # ✅ 정규식만으로 class 이름 추출: 'Abuse001_x264' → 'abuse'
-        class_name = re.sub(r'[\d_].*$', '', folder_name)
+        # class_name = re.sub(r'[\d_].*$', '', folder_name)
+
+        # save_dir = os.path.join(save_base, class_name)
+        # os.makedirs(save_dir, exist_ok=True)
+
+        # output_path = os.path.join(save_dir, f"{folder_name}.npy")
+        # extract_clip_features_from_images(folder_name, output_path, model, preprocess, device)
+
+    for folder_name in fail_list:
+        if not os.path.isdir(folder_name):
+            continue
+        
+        f_name = folder_name.split('/')[-1]
+        # ✅ 정규식만으로 class 이름 추출: 'Abuse001_x264' → 'abuse'
+        class_name = re.sub(r'[\d_].*$', '', f_name)
 
         save_dir = os.path.join(save_base, class_name)
         os.makedirs(save_dir, exist_ok=True)
 
-        output_path = os.path.join(save_dir, f"{folder_name}.npy")
-        extract_clip_features_from_images(folder_path, output_path, model, preprocess, device)
+        output_path = os.path.join(save_dir, f"{f_name}.npy")
+        extract_clip_features_from_images(folder_name, output_path, model, preprocess, device)

@@ -40,15 +40,15 @@ class UCFDataset(data.Dataset):
         video_fps = 30
         
         if self.using_caption:
-            # base_video_name = base_file.split('__')[0]
-
-            # matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
-            #                         self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro.npy")]
-
-            base_video_name = base_file.rsplit('.npy')[0]
+            base_video_name = base_file.split('__')[0]
 
             matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
-                        self.df_cap['path'].str.endswith(base_video_name + "_refine_2.npy")]
+                                    self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro_v2.npy")]
+
+            # base_video_name = base_file.rsplit('.npy')[0]
+
+            # matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
+            #             self.df_cap['path'].str.endswith(base_video_name + "_refine_2.npy")]
 
             if matching_rows.empty:
                 raise KeyError(f"No matching clip_cap_feature for video {base_video_name}")
@@ -111,14 +111,14 @@ class XDDataset(data.Dataset):
         video_fps = 30
         
         if self.using_caption:
-            # base_video_name = base_file.rsplit('__', 1)[0]
-
-            # matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
-            #                         self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro.npy")]
-            base_video_name = base_file.rsplit('.npy')[0]
+            base_video_name = base_file.rsplit('__', 1)[0]
 
             matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
-               self.df_cap['path'].str.endswith(base_video_name + "_refine_2.npy")]
+                                    self.df_cap['path'].str.endswith(base_video_name + "_captions_janus_pro_v2.npy")]
+            # base_video_name = base_file.rsplit('.npy')[0]
+
+            # matching_rows = self.df_cap[self.df_cap['path'].str.contains(base_video_name) & 
+            #    self.df_cap['path'].str.endswith(base_video_name + "_refine_2.npy")]
 
             if matching_rows.empty:
                 raise KeyError(f"No matching clip_cap_feature for video {base_file}")

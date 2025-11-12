@@ -24,7 +24,7 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, args):
+def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, description_text, args):
     
     model.to(device)
     model.eval()
@@ -66,7 +66,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     lengths[j] = length
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2, _ = model(visual, None, padding_mask, prompt_text)
+            _, logits1, logits2, _ = model(visual, None, padding_mask, prompt_text, description_text)
 
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2]) # (batch, 256, 1) -> (256, 1)
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2]) # (batch, 256, 14) -> (256, 14)
@@ -139,11 +139,29 @@ if __name__ == '__main__':
     args = ucf_option.parser.parse_args()
 
     label_map = dict({'Normal': 'Normal', 'Abuse': 'Abuse', 'Arrest': 'Arrest', 'Arson': 'Arson', 'Assault': 'Assault', 'Burglary': 'Burglary', 'Explosion': 'Explosion', 'Fighting': 'Fighting', 'RoadAccidents': 'RoadAccidents', 'Robbery': 'Robbery', 'Shooting': 'Shooting', 'Shoplifting': 'Shoplifting', 'Stealing': 'Stealing', 'Vandalism': 'Vandalism'})
+    label_map_description = dict({
+        'Normal': 'A state or behavior in everyday life without any special risk or problem.', 
+        'Abuse': 'The act of causing physical or mental harm to another person through words or actions, infringing on their rights.', 
+        'Arrest': 'A measure by law enforcement to detain a crime suspect and restrict their freedom.', 
+        'Arson': 'The criminal act of intentionally setting fire to property or life, causing significant damage.', 
+        'Assault': 'The act of inflicting physical violence or harm on another person.', 
+        'Burglary': 'The crime of secretly entering a residence or building to steal property.', 
+        'Explosion': 'A sudden release of energy from pressure or chemical reaction, producing a loud blast and shockwave.', 
+        'Fighting': 'A physical altercation where two or more individuals attack each other with fists, feet, or weapons.', 
+        'RoadAccidents': 'Accidents on roads involving collisions between vehicles, pedestrians, or bicycles.', 
+        'Robbery': 'The act of taking someone’s property by threat or use of force.', 
+        'Shooting': 'The act of firing projectiles from a firearm or other projectile weapon.', 
+        'Shoplifting': 'The act of concealing and stealing merchandise from a store.', 
+        'Stealing': 'The act of taking someone else’s property without their permission.', 
+        'Vandalism': 'The act of willfully damaging or defacing public facilities or another person’s property.'
+        })
 
     testdataset = UCFDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=False)
     testdataloader = DataLoader(testdataset, batch_size=1, shuffle=False)
     #test 시 동영상 1개씩 처리
     prompt_text = get_prompt_text(label_map)
+    description_text = get_prompt_text(label_map_description)
+
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)

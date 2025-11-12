@@ -78,7 +78,7 @@ def pmg_loss_txt_only(pred_txt, gt_txt):
     loss = torch.mean(mse_per_position)  # scalar
     return loss
 
-def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: dict, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
+def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: dict, label_map_description, device): # v=8cTqh9tMz_I__#1_label_A 제외 하기 
     model.to(device)
 
     gt = np.load(args.gt_path)
@@ -90,6 +90,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
     scheduler = MultiStepLR(optimizer, args.scheduler_milestones, args.scheduler_rate)
 
     prompt_text = get_prompt_text(label_map)
+    description_text = get_prompt_text(label_map_description)
     ap_best = 0
     epoch = 0
 
@@ -132,7 +133,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 feat_lengths = torch.cat([normal_lengths, anomaly_lengths], dim=0).to(device)
                 text_labels = get_batch_label(text_labels, prompt_text, label_map).to(device) # (batch, 7)
 
-                text_features, logits1, logits2, approxi_features = model(visual_features, cap_features, None, prompt_text) # edit idea6-3
+                text_features, logits1, logits2, approxi_features = model(visual_features, cap_features, None, prompt_text, description_text) # edit idea6-3
 
                 loss1 = CLAS2(logits1, text_labels, feat_lengths, device) 
                 loss_total1 += loss1.item()
@@ -151,7 +152,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
                 loss4 = pmg_loss_txt_only(approxi_features, cap_features)
                 loss_total4 += loss4.item()
 
-                loss = loss1 + loss2 + loss3 * 1e-4 + loss4 *4
+                loss = loss1 + loss2 + loss3 * 1e-4 + loss4
                 total_loss += loss.item()
 
                 optimizer.zero_grad()
@@ -185,7 +186,7 @@ def train(model, normal_loader, anomaly_loader, test_loader, args, label_map: di
 
                     print(f'epoch: {e+1}, loss1: {step_loss1:.4f}, loss2: {step_loss2:.4f}, loss3: {step_loss3:.4f}, loss4: {step_loss4:.4f}, loss_total: {step_loss_total:.4f}')
                     
-                    AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
+                    AUC, AP, AUC2, AP2, average_mAP = test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, description_text, args)
                     
                     test_acc1 = {'AUC1':AUC, 'AP1':AP}
                     test_acc2 = {'AUC2':AUC2, 'AP2':AP2}
@@ -224,6 +225,15 @@ if __name__ == '__main__':
     setup_seed(args.seed)
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
+    label_map_description = dict({
+        'A': 'A state or behavior in everyday life without any special risk or problem.',
+        'B1': 'A physical altercation where two or more individuals attack each other with fists, feet, or weapons.',  
+        'B2': 'The act of discharging a firearm or other weapon to propel a bullet or projectile toward a target.',  
+        'B4': 'A violent public disturbance where a group of people engage in disorderly behavior.',  
+        'B5': 'The act of causing physical or mental harm to another person through words or actions, infringing on their rights.',  
+        'B6': 'An unintended collision involving one or more motor vehicles that results in damage to property, injury, or death.',  
+        'G': 'A sudden release of energy from pressure or chemical reaction, producing a loud blast and shockwave.'
+        })
 
     normal_dataset = XDDataset(args.visual_length, args.train_list, args.train_cap_list, False, label_map, True, using_caption=args.using_caption)
     normal_loader = DataLoader(normal_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
@@ -234,4 +244,4 @@ if __name__ == '__main__':
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     model = CLIPVAD(args, device)
-    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, device)
+    train(model, normal_loader, anomaly_loader, test_loader, args, label_map, label_map_description, device)

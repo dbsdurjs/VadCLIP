@@ -12,7 +12,7 @@ from utils.xd_detectionMAP import getDetectionMAP as dmAP
 import xd_option
 from save_result import *
 
-def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, args):
+def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, device, description_text, args):
     
     model.to(device)
     model.eval()
@@ -54,7 +54,7 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
                     
             lengths = lengths.to(int)
             padding_mask = get_batch_mask(lengths, maxlen).to(device)
-            _, logits1, logits2, _ = model(visual, None, padding_mask, prompt_text)
+            _, logits1, logits2, _ = model(visual, None, padding_mask, prompt_text, description_text)
             logits1 = logits1.reshape(logits1.shape[0] * logits1.shape[1], logits1.shape[2])
             logits2 = logits2.reshape(logits2.shape[0] * logits2.shape[1], logits2.shape[2])
             prob2 = (1 - logits2[0:len_cur].softmax(dim=-1)[:, 0].squeeze(-1))
@@ -111,11 +111,22 @@ if __name__ == '__main__':
     args = xd_option.parser.parse_args()
 
     label_map = dict({'A': 'normal', 'B1': 'fighting', 'B2': 'shooting', 'B4': 'riot', 'B5': 'abuse', 'B6': 'car accident', 'G': 'explosion'})
-
+    label_map_description = dict({
+        'A': 'A state or behavior in everyday life without any special risk or problem.',
+        'B1': 'A physical altercation where two or more individuals attack each other with fists, feet, or weapons.',  
+        'B2': 'The act of discharging a firearm or other weapon to propel a bullet or projectile toward a target.',  
+        'B4': 'A violent public disturbance where a group of people engage in disorderly behavior.',  
+        'B5': 'The act of causing physical or mental harm to another person through words or actions, infringing on their rights.',  
+        'B6': 'An unintended collision involving one or more motor vehicles that results in damage to property, injury, or death.',  
+        'G': 'A sudden release of energy from pressure or chemical reaction, producing a loud blast and shockwave.'
+        })
+    
     test_dataset = XDDataset(args.visual_length, args.test_list, args.test_cap_list, True, label_map, using_caption=False)
     test_loader = DataLoader(test_dataset, batch_size=1, shuffle=False)
 
     prompt_text = get_prompt_text(label_map)
+    description_text = get_prompt_text(label_map_description)
+
     gt = np.load(args.gt_path)
     gtsegments = np.load(args.gt_segment_path, allow_pickle=True)
     gtlabels = np.load(args.gt_label_path, allow_pickle=True)
@@ -126,4 +137,4 @@ if __name__ == '__main__':
     # model_param = model_param['model_state_dict'] # add
     model.load_state_dict(model_param)
 
-    test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, args)
+    test(model, test_loader, args.visual_length, prompt_text, gt, gtsegments, gtlabels, device, description_text, args)
