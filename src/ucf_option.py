@@ -13,9 +13,9 @@ parser.add_argument('--prompt-prefix', default=10, type=int)
 parser.add_argument('--prompt-postfix', default=10, type=int)
 parser.add_argument('--classes-num', default=14, type=int)
 
-parser.add_argument('--text-layers', default=8, type=int) # 8일때 87.23%
-parser.add_argument('--text-dim', default=512, type=int)
-parser.add_argument('--text-head', default=1, type=int) # 1일때 87.23%
+parser.add_argument('--text-layers', default=8, type=int) # 8일때 87.23%, 사용안함
+parser.add_argument('--text-dim', default=512, type=int) # 사용안함
+parser.add_argument('--text-head', default=1, type=int) # 1일때 87.23%, 사용안함
 parser.add_argument('--lstm-layer', default=1, type=int) # 1일때 87.23%
 parser.add_argument('--cross-attn-head', default=1, type=int) # 1 - 87.23%, 5.67% | 2 - 87.11%, 6.27%
 
