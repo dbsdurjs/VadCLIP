@@ -1,10 +1,9 @@
 import os
-import textwrap
-
 import cv2
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
-
+from typing import List, Tuple, Dict, Union
+from typing import List, Dict
 import numpy as np
 
 def find_closest_key_value(d, frame_idx):
@@ -13,7 +12,6 @@ def find_closest_key_value(d, frame_idx):
     )
     return sorted_items[-1] if sorted_items else (None, None)
 
-import os
 
 def npy_path_to_frame_path(npy_path, frames_base_dir):
     class_folder = os.path.basename(os.path.dirname(npy_path))
@@ -134,3 +132,76 @@ def visualize_video(
     plt.close()
     video_writer.release()
     cv2.destroyAllWindows()
+
+def _iter_segments(gt_segments: Union[List[Tuple[int,int]], np.ndarray], T: int):
+    """(s,e) 구간 리스트/배열을 안전하게 순회."""
+    if gt_segments is None:
+        return
+    # numpy array인 경우: shape (K,2) 또는 (0,)
+    if isinstance(gt_segments, np.ndarray):
+        if gt_segments.size == 0:
+            return
+        # (K,2)로 가정하고 순회
+        for se in gt_segments:
+            if len(se) < 2:
+                continue
+            s = max(0, int(se[0])); e = min(T - 1, int(se[1]))
+            if s <= e:
+                yield (s, e)
+    else:
+        # list[tuple] 가정
+        for s, e in gt_segments:
+            s = max(0, int(s)); e = min(T - 1, int(e))
+            if s <= e:
+                yield (s, e)
+
+
+def plot_ucf_grid_min(
+    save_dir: str,
+    videos: List[Dict],
+    class_labels: List[str],
+    normal_class_name: str = "Normal",
+    gt_alpha: float = 0.25,
+    dpi: int = 150,
+    figsize=(8, 3),
+):
+    os.makedirs(save_dir, exist_ok=True)
+    C = len(class_labels)
+    try:
+        normal_idx = class_labels.index(normal_class_name)
+    except ValueError:
+        normal_idx = 0  # 못 찾으면 0번을 Normal로 가정
+
+    saved_paths = []
+
+    for vid in videos:
+        title = vid.get("title", "unknown")
+        scores = np.asarray(vid["softmax_scores"], dtype=float)  # (T, C)
+        assert scores.ndim == 2 and scores.shape[1] == C, f"{title}: softmax_scores shape는 (T, C)여야 합니다."
+        anomaly = 1.0 - scores[:, normal_idx]
+        anomaly = np.clip(anomaly, 0.0, 1.0)
+        T = len(anomaly)
+
+        fig, ax = plt.subplots(1, 1, figsize=figsize, dpi=dpi)
+        ax.set_xlim(0, T - 1)
+        ax.set_ylim(0.0, 1.0)
+
+        # --- 빨간 GT 음영 (우선) ---
+        gts = vid.get("gt_segments", None)
+        for (s, e) in _iter_segments(gts, T):
+            ax.axvspan(s, e, color="red", alpha=gt_alpha)
+
+        # --- anomaly score 곡선 ---
+        ax.plot(anomaly, linewidth=1.4)
+        ax.set_title(title, fontsize=11, pad=6)
+        ax.set_xlabel("Frame")
+        ax.set_ylabel("Anomaly score")
+
+        save_path = os.path.join(save_dir, f"{title}.png")
+        fig.tight_layout()
+        fig.savefig(save_path, bbox_inches="tight")
+        plt.close(fig)
+
+        saved_paths.append(save_path)
+
+    return saved_paths

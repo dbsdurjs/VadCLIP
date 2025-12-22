@@ -130,6 +130,22 @@ def test(model, testdataloader, maxlen, prompt_text, gt, gtsegments, gtlabels, d
 
     if args.save_test_result:
         save_test_txt(ROC1, AP1, ROC2, AP2, averageMAP, dmap, iou, args, filename="../output/result_ucf.txt")
+    
+    # 시각화 파일 만들기
+    videos_payload = []
+    for name, probs, segs in zip(video_names_list, element_logits2_stack, gtsegments):
+        videos_payload.append({
+            "title": name,              # 비디오 이름
+            "softmax_scores": probs,    # (T, C)
+            "gt_segments": segs         # ✅ test()의 gtsegments가 바로 GT 구간
+        })
+
+    save_dir = "../output/ucf_test_visualization"
+    os.makedirs(save_dir, exist_ok=True)
+
+    plot_ucf_grid_min(save_dir=save_dir,
+                    videos=videos_payload,
+                    class_labels=prompt_text)
 
     return ROC1, AP1, ROC2, AP2, averageMAP
 

@@ -1,2 +1,2 @@
-CUDA_VISIBLE_DEVICES=0 python src/ucf_train.py --model-path='../vadclip_pth/model/graduate_paper_base_ucf.pth' --checkpoint-path='../vadclip_pth/model/checkpoint_graduate_paper_base_ucf.pth' --using-caption
+# CUDA_VISIBLE_DEVICES=0 python src/ucf_train.py --model-path='../vadclip_pth/model/graduate_paper_base_ucf.pth' --checkpoint-path='../vadclip_pth/model/checkpoint_graduate_paper_base_ucf.pth' --using-caption
 CUDA_VISIBLE_DEVICES=0 python src/ucf_test.py --model-path '../vadclip_pth/model/graduate_paper_base_ucf.pth' --checkpoint-path '../vadclip_pth/model/checkpoint_graduate_paper_base_ucf.pth' --save-test-result
